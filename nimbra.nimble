@@ -2,7 +2,7 @@
 
 version       = "0.0.1"
 author        = "Undeadguy"
-description   = "A new awesome nimble package"
+description   = "A CLI framework inspired by Go-Cobra"
 license       = "MIT"
 srcDir        = "src"
 
