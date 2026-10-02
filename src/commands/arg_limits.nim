@@ -1,3 +1,4 @@
+from options import Option, isNone, get
 type
   ArgLimitKind* = enum
     alkNone
@@ -45,3 +46,25 @@ proc Equal*(number: uint): ArgLimit =
 
 proc Between*(start, to: uint): ArgLimit =
   return ArgLimit(kind: ArgLimitKind.alkBetween, min: start, max: to)
+
+proc Matches*(o: Option[ArgLimit], args: seq[string]): bool =
+  if o.isNone:
+    return true
+
+  let argsCount = uint(args.len)
+  let val = o.get
+  case val.kind
+  of ArgLimitKind.alkNone:
+    return argsCount == 0
+  of ArgLimitKind.alkLessThan:
+    return argsCount < val.lessThan
+  of ArgLimitKind.alkLessOrEq:
+    return argsCount <= val.lessOrEq
+  of ArgLimitKind.alkGreaterThan:
+    return argsCount > val.greaterThan
+  of ArgLimitKind.alkGreaterOrEq:
+    return argsCount >= val.greaterOrEq
+  of ArgLimitKind.alkEq:
+    return argsCount == val.eq
+  of ArgLimitKind.alkBetween:
+    return val.min <= argsCount and argsCount <= val.max

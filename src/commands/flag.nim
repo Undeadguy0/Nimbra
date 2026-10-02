@@ -2,7 +2,7 @@ import options
 import Tables
 
 from results import Result
-from exceptions import raiseCli, CliSettingError
+from ../exceptions import raiseCli, CliSettingError
 
 type
   CliValue* = concept x
@@ -13,7 +13,6 @@ type
     name*: string
     aliases*: seq[string]
     help*: string
-    persistent*: bool
     assign*: proc(raw: string, flagName: string)
 
   FlagSet* = object
