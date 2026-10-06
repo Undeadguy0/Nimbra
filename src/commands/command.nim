@@ -6,7 +6,7 @@ from executions import Execution
 from flag import CliValue, Flag, FlagSet
 from results import Result, err, ok
 from os import commandLineParams
-from ../convertation import fromString
+from ../stdconv import fromString
 
 type Command* = ref object
   name*: string
@@ -67,16 +67,21 @@ proc addFlag*[T: CliValue](
         else:
           char.none(),
       assign: assignFunc,
+      isBoolean: T is bool,
     )
   )
 
-proc execute*(c: Command) {.raises: [ref EOFError, ref IOError, ref ValueError, ref CliError].} =
+proc execute*(
+    c: Command
+) {.raises: [ref EOFError, ref IOError, ref ValueError, ref CliError].} =
   try:
     let input = commandLineParams()
+    var
+      currentCommand = c
+      currentPart = 0
 
-    for idx in 0 .. input.len - 1:
-      if not input[idx].startsWith("-"):
-        discard
+    if input.len != 0:
+      discard
   except CliError as ce:
     if c.handleExceptions:
       ce.gracefulHandle()

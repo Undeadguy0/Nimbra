@@ -30,6 +30,8 @@ proc `$`*(err: ref CliError): string =
   else:
     result = err.msg
 
-proc gracefulHandle*(err: ref CliError) {.noreturn, raises: [ref ValueError, ref IOError].} =
+proc gracefulHandle*(
+    err: ref CliError
+) {.noreturn, raises: [ref ValueError, ref IOError].} =
   stderr.writeLine $err
   quit 1

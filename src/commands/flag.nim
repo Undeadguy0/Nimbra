@@ -6,13 +6,14 @@ from ../exceptions import raiseCli, CliSettingError
 
 type
   CliValue* = concept x
-    fromString(string) is type(x)
+    fromString(type(x), string) is type(x)
     argHint(type(x)) is string
   Flag* = object
     short*: Option[char]
     name*: string
     aliases*: seq[string]
     help*: string
+    isBoolean: bool
     assign*: proc(raw: string, flagName: string)
 
   FlagSet* = object
