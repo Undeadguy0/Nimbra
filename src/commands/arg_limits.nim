@@ -1,70 +1,43 @@
-from options import Option, isNone, get
-type
-  ArgLimitKind* = enum
-    alkNone
-    alkLessThan
-    alkLessOrEq
-    alkGreaterThan
-    alkGreaterOrEq
-    alkEq
-    alkBetween
+## Сколько позиционных принимает команда.
+##
+## Верхней границы нет, когда `max.isNone`. Отдельного `Option[ArgLimit]`
+## нет: «любое число» — это `min == 0` и пустой `max`.
+##
+## How many positionals a command accepts.
+##
+## There is no upper bound when `max.isNone`. There is no `Option[ArgLimit]`:
+## "any count" is `min == 0` and an empty `max`.
 
-  ArgLimit* = object
-    case kind*: ArgLimitKind
-    of alkNone:
-      discard
-    of alkLessThan:
-      lessThan*: uint
-    of alkLessOrEq:
-      lessOrEq*: uint
-    of alkGreaterThan:
-      greaterThan*: uint
-    of alkGreaterOrEq:
-      greaterOrEq*: uint
-    of alkEq:
-      eq*: uint
-    of alkBetween:
-      min*, max*: uint
+import std/options
+from ../exceptions import newCliSettingError
 
-proc NoArgs*(): ArgLimit =
-  return ArgLimit(kind: ArgLimitKind.alkNone)
+type ArgLimit* = object
+  min*: uint
+  max*: Option[uint]
 
-proc LessThan*(border: uint): ArgLimit =
-  return ArgLimit(kind: ArgLimitKind.alkLessThan, lessThan: border)
+proc noArgs*(): ArgLimit =
+  ArgLimit(min: 0, max: some(0'u))
 
-proc LessOrEq*(upTo: uint): ArgLimit =
-  return ArgLimit(kind: ArgLimitKind.alkLessOrEq, lessOrEq: upTo)
+proc exact*(n: uint): ArgLimit =
+  ArgLimit(min: n, max: some(n))
 
-proc GreaterThan*(start: uint): ArgLimit =
-  return ArgLimit(kind: ArgLimitKind.alkGreaterThan, greaterThan: start)
+proc atLeast*(n: uint): ArgLimit =
+  ArgLimit(min: n, max: none(uint))
 
-proc GreaterOrEq*(start: uint): ArgLimit =
-  return ArgLimit(kind: ArgLimitKind.alkGreaterOrEq, greaterOrEq: start)
+proc atMost*(n: uint): ArgLimit =
+  ArgLimit(min: 0, max: some(n))
 
-proc Equal*(number: uint): ArgLimit =
-  return ArgLimit(kind: ArgLimitKind.alkEq, eq: number)
+proc between*(start, to: uint): ArgLimit =
+  if start > to:
+    raise newCliSettingError("argument range min is greater than max")
+  ArgLimit(min: start, max: some(to))
 
-proc Between*(start, to: uint): ArgLimit =
-  return ArgLimit(kind: ArgLimitKind.alkBetween, min: start, max: to)
-
-proc Matches*(o: Option[ArgLimit], args: seq[string]): bool =
-  if o.isNone:
-    return true
-
-  let argsCount = uint(args.len)
-  let val = o.get
-  case val.kind
-  of ArgLimitKind.alkNone:
-    return argsCount == 0
-  of ArgLimitKind.alkLessThan:
-    return argsCount < val.lessThan
-  of ArgLimitKind.alkLessOrEq:
-    return argsCount <= val.lessOrEq
-  of ArgLimitKind.alkGreaterThan:
-    return argsCount > val.greaterThan
-  of ArgLimitKind.alkGreaterOrEq:
-    return argsCount >= val.greaterOrEq
-  of ArgLimitKind.alkEq:
-    return argsCount == val.eq
-  of ArgLimitKind.alkBetween:
-    return val.min <= argsCount and argsCount <= val.max
+proc holds*(limit: ArgLimit, count: int): bool =
+  ## `count` — длина хвоста позиционных после разбора.
+  ## `count` is the length of the positional tail after parsing.
+  let n = uint(count)
+  if n < limit.min:
+    return false
+  if limit.max.isSome and n > limit.max.get:
+    return false
+  true
