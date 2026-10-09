@@ -139,8 +139,6 @@ proc isVoidResult(t: NimNode): bool =
   t.kind == nnkBracketExpr and typeHead(t) == "Result" and t.len >= 2 and
     (t[1].kind == nnkEmpty or t[1].eqIdent("void"))
 
-
-
 macro defineCommand*(fn: typed, dest: untyped): untyped =
   ## Декларативно конквертирует функцию-обработчик в Command.
   ## Первый аргумент - обработчик, второй - имя будущей Command
@@ -207,7 +205,7 @@ macro defineCommand*(fn: typed, dest: untyped): untyped =
         else:
           newCall(someSym, p.defaultNode.copyNimTree())
       call.add named("default", defExpr)
-    elif not p.isBool:
+    elif not p.isBool and not isOptionType(p.typ):
       call.add named("required", newLit(true))
     if p.shortNode.kind != nnkEmpty:
       call.add named("short", newCall(someSym, p.shortNode.copyNimTree()))
