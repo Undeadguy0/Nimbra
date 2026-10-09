@@ -3,8 +3,8 @@ import std/unittest
 import results
 import nimbra
 
-suite "регистрация флагов":
-  test "required вместе с дефолтом и required у bool не регистрируются":
+suite "flag registration":
+  test "required with default and required on bool do not register":
     var
       port = 1
       verbose = false
@@ -14,7 +14,7 @@ suite "регистрация флагов":
     expect CliSettingError:
       root.addFlag("verbose", verbose, required = true)
 
-  test "дубликат имени, алиаса и короткого флага":
+  test "duplicate name, alias and short flag":
     var
       a = 0
       b = 0
@@ -27,7 +27,7 @@ suite "регистрация флагов":
     expect CliSettingError:
       root.addFlag("else", b, short = some('p'))
 
-  test "пустое имя команды и пересечение алиасов":
+  test "empty command name and alias collision":
     let root = newCommand("app")
     expect CliSettingError:
       root.add newCommand("")
@@ -41,7 +41,7 @@ suite "регистрация флагов":
     expect CliSettingError:
       discard newCommand("app", aliases = @["a", "a"])
 
-  test "пустое имя флага, пустой алиас и повтор алиаса самого флага":
+  test "empty flag name, empty alias and duplicate flag alias":
     var n = 0
     let root = newCommand("app")
     expect CliSettingError:
@@ -53,8 +53,8 @@ suite "регистрация флагов":
     expect CliSettingError:
       root.addFlag("port", n, aliases = @["p", "p"])
 
-suite "политика значения":
-  test "обязательный int: пустой raw — ошибка разбора, отсутствие — MissingFlagError":
+suite "value policy":
+  test "required int: empty raw - parse error, absent - MissingFlagError":
     var port = 5
     let root = newCommand("app")
     root.addFlag("port", port, aliases = @["p"], required = true)
@@ -82,7 +82,7 @@ suite "политика значения":
     check root.tryExecute(@["--port", "-3"]).isOk
     check port == -3
 
-  test "явный дефолт закрывает отсутствие и пустой raw, но не мусор":
+  test "explicit default covers absent and empty raw, but not garbage":
     var port = 1
     let root = newCommand("app")
     root.addFlag("port", port, default = some(9))
@@ -95,7 +95,7 @@ suite "политика значения":
     check root.tryExecute(@["--port", "12abc"]).isErr
     check port == 4
 
-  test "без required и без дефолта отсутствие не трогает переменную":
+  test "without required and without default, absent does not touch variable":
     var n = 5
     let root = newCommand("app")
     root.addFlag("n", n)
@@ -106,7 +106,7 @@ suite "политика значения":
     check root.tryExecute(@["--n", ""]).isErr
     check n == 5
 
-  test "обязательная строка может быть пустой":
+  test "required string can be empty":
     var name = "preset"
     let root = newCommand("app")
     root.addFlag("name", name, required = true)
@@ -116,7 +116,7 @@ suite "политика значения":
     check root.tryExecute(@[]).error of MissingFlagError
     check name == "preset"
 
-  test "bool: нет флага — ложь, голое упоминание — истина":
+  test "bool: no flag - false, bare mention - true":
     var verbose = true
     let root = newCommand("app")
     root.addFlag("verbose", verbose, short = some('v'))
@@ -130,14 +130,13 @@ suite "политика значения":
     check verbose == false
     check root.tryExecute(@["--verbose="]).isOk
     check verbose == false
-    # повторный запуск без флага снова пишет ложь, отметка не залипает
-    # a later run without the flag writes false again; the seen-mark does not stick
+    # repeat run without flag writes false again; seen mark does not stick
     check root.tryExecute(@["--verbose"]).isOk
     check verbose
     check root.tryExecute(@[]).isOk
     check verbose == false
 
-  test "явный дефолт bool":
+  test "explicit bool default":
     var verbose = false
     let root = newCommand("app")
     root.addFlag("verbose", verbose, default = some(true))
@@ -148,7 +147,7 @@ suite "политика значения":
     check root.tryExecute(@["--verbose=no"]).isOk
     check verbose == false
 
-  test "повтор seq дописывает один токен, отсутствие подставляет дефолт списка":
+  test "seq repeat appends one token, absent substitutes list default":
     var tags = @["keep"]
     let root = newCommand("app")
     root.addFlag("tag", tags, default = some(@["d"]))
@@ -161,7 +160,7 @@ suite "политика значения":
     check root.tryExecute(@["--tag="]).isOk
     check tags[^1] == ""
 
-  test "обязательный seq и пустой int-элемент":
+  test "required seq and empty int element":
     var
       names: seq[string]
       nums: seq[int]
@@ -178,7 +177,7 @@ suite "политика значения":
     check root.tryExecute(@["--name", ""]).isOk
     check names[^1] == ""
 
-  test "Option: отсутствие стирает стартовый some":
+  test "Option: absent clears initial some":
     var host = some("keep")
     let root = newCommand("app")
     root.addFlag("host", host, default = some("localhost"))
@@ -189,7 +188,7 @@ suite "политика значения":
     check root.tryExecute(@["--host", "box"]).isOk
     check host == some("box")
 
-  test "Option без дефолта становится none":
+  test "Option without default becomes none":
     var host = some("keep")
     let root = newCommand("app")
     root.addFlag("host", host)
@@ -202,7 +201,7 @@ suite "политика значения":
     check root.tryExecute(@["--host="]).isOk
     check host == some("")
 
-  test "обязательный Option и пустой int не прячутся":
+  test "required Option and empty int do not hide":
     var
       need = some("keep")
       port = some(1)
@@ -228,7 +227,7 @@ suite "политика значения":
     check other.tryExecute(@["--n="]).error of ParsingFlagError
     check bare == some(4)
 
-  test "seq без дефолта остаётся как был":
+  test "seq without default remains as was":
     var tags = @["keep"]
     let root = newCommand("app")
     root.addFlag("tag", tags)
@@ -238,7 +237,7 @@ suite "политика значения":
     check tags == @["keep", "a"]
 
 suite "persistent":
-  test "флаг родителя виден потомкам и пишет в ту же переменную":
+  test "parent flag visible to children and writes to same variable":
     var verbose = false
     let
       root = newCommand("app")
@@ -252,7 +251,7 @@ suite "persistent":
     check root.tryExecute(@["mid", "leaf"]).isOk
     check verbose == false
 
-  test "уже собранное поддерево получает persistent при add":
+  test "already built subtree receives persistent on add":
     var verbose = false
     let
       root = newCommand("app")
@@ -264,7 +263,7 @@ suite "persistent":
     check root.tryExecute(@["mid", "leaf", "--verbose"]).isOk
     check verbose
 
-  test "локальный флаг вниз не течёт, свой дубликат — ошибка регистрации":
+  test "local flag does not flow down, own duplicate - registration error":
     var
       port = 1
       other = 0
@@ -286,7 +285,7 @@ suite "persistent":
       root.addFlag("extra", other, persistent = true)
       sub.addFlag("extra", other)
 
-  test "persistent доходит до внука и пишется один раз":
+  test "persistent reaches grandchild and writes once":
     var
       verbose = false
       tags: seq[string]
@@ -307,7 +306,7 @@ suite "persistent":
     check root.tryExecute(@["mid", "leaf"]).isOk
     check verbose == false
 
-  test "локальный флаг не виден ни родителю, ни внуку":
+  test "local flag not visible to parent or grandchild":
     var port = 0
     let
       root = newCommand("app")
@@ -322,7 +321,7 @@ suite "persistent":
     check root.tryExecute(@["mid", "leaf", "--port", "3"]).error of ParsingFlagError
     check port == 2
 
-  test "отказ persistent не оставляет флаг на половине дерева":
+  test "persistent refusal does not leave flag on half tree":
     var
       quiet = false
       verbose = false

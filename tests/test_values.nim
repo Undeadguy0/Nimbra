@@ -15,8 +15,8 @@ type
 proc fromString(_: typedesc[Port], r: string): Port =
   Port(fromString(int, r))
 
-suite "fromString и argHint":
-  test "числа съедают всю строку":
+suite "fromString and argHint":
+  test "numbers consume entire string":
     check fromString(int, "12") == 12
     check fromString(int, "-3") == -3
     check fromString(int, "+3") == 3
@@ -52,7 +52,7 @@ suite "fromString и argHint":
     expect ParsingFlagError:
       discard fromString(float, "+")
 
-  test "fromString не знает имя флага":
+  test "fromString does not know flag name":
     try:
       discard fromString(int, "nope")
       check false
@@ -60,14 +60,14 @@ suite "fromString и argHint":
       check e.flag == ""
       check e.raw == "nope"
 
-  test "строка и символ":
+  test "string and char":
     check fromString(string, "") == ""
     check fromString(string, "ab") == "ab"
     check fromString(char, "q") == 'q'
     expect ParsingFlagError:
       discard fromString(char, "ab")
 
-  test "bool только известные слова":
+  test "bool only known words":
     check fromString(bool, "YES")
     check fromString(bool, "off") == false
     check fromString(bool, "0") == false
@@ -76,7 +76,7 @@ suite "fromString и argHint":
     expect ParsingFlagError:
       discard fromString(bool, "maybe")
 
-  test "enum и ip прячут ValueError":
+  test "enum and ip hide ValueError":
     check fromString(Color, "red") == red
     check $fromString(IpAddress, "127.0.0.1") == "127.0.0.1"
     expect ParsingFlagError:
@@ -84,19 +84,19 @@ suite "fromString и argHint":
     expect ParsingFlagError:
       discard fromString(IpAddress, "not-an-ip")
 
-  test "argHint не входит в концепт":
+  test "argHint not part of concept":
     check argHint(int) == "int"
     check argHint(IpAddress) == "ip"
     check argHint(Port) == "value"
 
-  test "свой тип подключается перегрузкой fromString":
+  test "custom type plugs in via fromString overload":
     var port: Port
     let root = newCommand("app")
     root.addFlag("port", port, required = true)
     check root.tryExecute(@["--port", "80"]).isOk
     check int(port) == 80
 
-  test "enum, символ и ip доходят через argv":
+  test "enum, char and ip pass through argv":
     var
       color = red
       mark = 'x'
@@ -115,8 +115,8 @@ suite "fromString и argHint":
     check (ref ParsingFlagError)(bad.error).flag == "mark"
     check (ref ParsingFlagError)(bad.error).raw == "ab"
 
-suite "текст ошибок":
-  test "поля потомка читаются через $":
+suite "error messages":
+  test "child fields readable via $":
     var port = 0
     let root = newCommand("app")
     root.addFlag("port", port, required = true)

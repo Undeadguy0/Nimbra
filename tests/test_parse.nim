@@ -4,14 +4,14 @@ import std/unittest
 import results
 import nimbra
 
-suite "разбор argv":
-  test "корень по токенам не ищется, неизвестное слово — позиционные":
+suite "argv parsing":
+  test "root not searched by tokens, unknown word - positional":
     let root = newCommand("app")
     let parsed = root.parse(@["app", "file"])
     check parsed.path.len == 1
     check parsed.args == @["app", "file"]
 
-  test "спуск по имени и алиасу, дальше команды не ищутся":
+  test "descend by name and alias, commands not searched further":
     let
       root = newCommand("app")
       mid = newCommand("server", aliases = @["s"])
@@ -28,7 +28,7 @@ suite "разбор argv":
     check skipped.path.len == 1
     check skipped.args == @["start"]
 
-  test "флаги, кластеры, отрицательные числа и --":
+  test "flags, clusters, negative numbers and --":
     var
       verbose = false
       extra = false
@@ -46,7 +46,7 @@ suite "разбор argv":
     check count == -4
     check parsed.args == @["file", "--nope"]
 
-  test "значение короткого флага отдельным токеном и пропуск --":
+  test "short flag value as separate token and -- skip":
     var port = 0
     let root = newCommand("app")
     root.addFlag("port", port, short = some('p'), required = true)
@@ -59,7 +59,7 @@ suite "разбор argv":
     check stopped.isErr
     check stopped.error of ParsingFlagError
 
-  test "неизвестный флаг и одиночный минус":
+  test "unknown flag and lone minus":
     var verbose = false
     let root = newCommand("app")
     root.addFlag("verbose", verbose)
@@ -70,7 +70,7 @@ suite "разбор argv":
     check verbose
     check parsed.args == @["-"]
 
-  test "после первого позиционного хвост не разбирается как флаги":
+  test "after first positional tail not parsed as flags":
     var verbose = false
     let root = newCommand("app")
     root.addFlag("verbose", verbose)
@@ -78,7 +78,7 @@ suite "разбор argv":
     check verbose == false
     check parsed.args == @["file", "--verbose"]
 
-  test "лимит считается у выбранной команды":
+  test "limit counted at selected command":
     let
       root = newCommand("app")
       sub = newCommand("sub")
@@ -94,7 +94,7 @@ suite "разбор argv":
     check e.max == some(2'u)
     check root.tryExecute(@["sub", "one", "two"]).isOk
 
-  test "границы конструкторов":
+  test "constructor boundaries":
     let root = newCommand("app")
     root.argLimit = noArgs()
     check root.tryExecute(@[]).isOk
@@ -108,7 +108,7 @@ suite "разбор argv":
     expect CliSettingError:
       discard between(3, 1)
 
-  test "parse не вызывает хуки":
+  test "parse does not call hooks":
     var ran = false
     let root = newCommand("app")
     root.setRun proc(args: seq[string]) =
@@ -118,7 +118,7 @@ suite "разбор argv":
     check root.tryExecute(@["file"]).isOk
     check ran
 
-  test "parse не проверяет лимит, ошибка флага и лимита не зовёт хуки":
+  test "parse does not check limit, flag error and limit do not call hooks":
     var ran = false
     var port = 0
     let root = newCommand("app")
@@ -138,7 +138,7 @@ suite "разбор argv":
     check port == 2
     check ran
 
-  test "-- прячет хвост и не считает это упоминанием флага":
+  test "-- hides tail and does not count as flag mention":
     var count = 3
     let need = newCommand("app")
     need.addFlag("count", count, required = true)
@@ -153,7 +153,7 @@ suite "разбор argv":
     check parsed.args == @["--verbose", "-v"]
     check verbose == false
 
-  test "флаг обрывает спуск по командам":
+  test "flag interrupts command descent":
     var verbose = false
     let
       root = newCommand("app")
@@ -169,7 +169,7 @@ suite "разбор argv":
     check verbose
     check between.args == @["now"]
 
-  test "голое булево не съедает следующий токен":
+  test "bare boolean does not consume next token":
     var
       verbose = false
       extra = false
@@ -197,7 +197,7 @@ suite "разбор argv":
     check verbose
     check short.args == @["false"]
 
-  test "кластер: булевы, остаток и следующий токен":
+  test "cluster: booleans, remainder and next token":
     var
       verbose = false
       extra = false
@@ -224,7 +224,7 @@ suite "разбор argv":
     check (ref ParsingFlagError)(unknown.error).flag == "q"
     check extra
 
-  test "нет значения и значение, похожее на флаг":
+  test "no value and value looking like flag":
     var
       port = 1
       verbose = false
@@ -252,7 +252,7 @@ suite "разбор argv":
     check port == -3
     check verbose
 
-  test "повтор, алиас и первое равно":
+  test "repeat, alias and first equals":
     var
       port = 0
       name = ""
@@ -270,7 +270,7 @@ suite "разбор argv":
     check name == ""
     check port == 8
 
-  test "пустой токен начинает позиционные":
+  test "empty token starts positional":
     var verbose = false
     let root = newCommand("app")
     root.addFlag("verbose", verbose)
@@ -278,7 +278,7 @@ suite "разбор argv":
     check verbose == false
     check parsed.args == @["", "--verbose"]
 
-  test "неизвестный короткий флаг и минус с цифрой":
+  test "unknown short flag and minus with digit":
     var n = 0
     let root = newCommand("app")
     root.addFlag("n", n, default = some(1))
@@ -292,7 +292,7 @@ suite "разбор argv":
     check hidden.args == @["-4"]
     check n == 1
 
-  test "отметки упоминаний не живут между запусками":
+  test "mention marks do not live between runs":
     var n = 0
     let root = newCommand("app")
     root.addFlag("n", n, required = true)
@@ -303,7 +303,7 @@ suite "разбор argv":
     check root.tryExecute(@[]).error of MissingFlagError
     check n == 2
 
-  test "сырой токен доходит до fromString целиком":
+  test "raw token reaches fromString intact":
     var
       n = 0
       f = 0.0
@@ -320,7 +320,7 @@ suite "разбор argv":
     check (ref ParsingFlagError)(bad.error).raw == ""
     check n == 1000
 
-  test "флаги только у выбранной команды":
+  test "flags only at selected command":
     var
       parentPort = 0
       childPort = 0
@@ -341,7 +341,7 @@ suite "разбор argv":
     check childPort == 4
     check parentPort == 1
 
-  test "лимит не считает флаги":
+  test "limit does not count flags":
     var verbose = false
     let root = newCommand("app")
     root.argLimit = exact(1)
@@ -353,7 +353,7 @@ suite "разбор argv":
     check (ref ArgCountError)(missed.error).got == 0
     check root.tryExecute(@["--verbose", "a", "b"]).error of ArgCountError
 
-  test "команда, алиас и хвост после --":
+  test "command, alias and tail after --":
     var
       verbose = false
       port = 0

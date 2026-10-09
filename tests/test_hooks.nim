@@ -9,8 +9,8 @@ type AppErr = object
 proc toCliError(e: AppErr): ref CliError =
   newException(CliError, e.text)
 
-suite "хуки":
-  test "цепочка persistent и локальные предков молчат":
+suite "hooks":
+  test "persistent chain and local ancestors are silent":
     var log: seq[string]
     let
       root = newCommand("app")
@@ -43,7 +43,7 @@ suite "хуки":
         "mid-pers-post", "root-pers-post",
       ]
 
-  test "ошибка run не пропускает post, ошибка pre до run не доходит":
+  test "run error does not skip post, pre error does not reach run":
     var log: seq[string]
     let root = newCommand("app")
     root.setRun proc(args: seq[string]) =
@@ -68,7 +68,7 @@ suite "хуки":
     check other.tryExecute(@[]).isErr
     check log == @["pre"]
 
-  test "Result и свой toCliError, прочий CatchableError не прячется":
+  test "Result and custom toCliError, other CatchableError not hidden":
     let root = newCommand("app")
     root.setRun proc(args: seq[string]): Result[void, string] =
       if args.len == 0:
@@ -91,14 +91,14 @@ suite "хуки":
     expect ValueError:
       discard buggy.tryExecute(@[])
 
-  test "группа без run запускается":
+  test "group without run executes":
     let
       root = newCommand("app")
       sub = newCommand("sub")
     root.add sub
     check root.tryExecute(@["sub"]).isOk
 
-  test "свой persistent молчит, когда выбрана сама команда":
+  test "own persistent is silent when command itself selected":
     var log: seq[string]
     let
       root = newCommand("app")
@@ -124,7 +124,7 @@ suite "хуки":
     check root.tryExecute(@["sub", "a", "b"]).isOk
     check log == @["root-pers-pre", "sub-run:a", "root-pers-post"]
 
-  test "повторный setRun заменяет обработчик":
+  test "repeat setRun replaces handler":
     var n = 0
     let root = newCommand("app")
     root.setRun proc(args: seq[string]) =
@@ -134,7 +134,7 @@ suite "хуки":
     check root.tryExecute(@[]).isOk
     check n == 2
 
-  test "ошибка post заменяет ошибку run и обрывает хвост":
+  test "post error replaces run error and breaks tail":
     var log: seq[string]
     let
       root = newCommand("app")
@@ -152,7 +152,7 @@ suite "хуки":
     check failed.error.msg == "from post"
     check log == @["run", "post"]
 
-  test "Result на pre и persistent post":
+  test "Result on pre and persistent post":
     let root = newCommand("app")
     root.setPreRun proc(args: seq[string]): Result[void, string] =
       err("from pre")

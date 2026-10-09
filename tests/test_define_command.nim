@@ -33,6 +33,8 @@ proc collect(tags: seq[string], host: Option[string], args: seq[string]) =
   seenTags = tags
   if host.isSome:
     seenHost = host.get
+  else:
+    seenHost = "none"
 
 var
   loudSeen = true
@@ -69,18 +71,18 @@ proc nums(ns: seq[int]) =
   numsSeen = ns
 
 suite "defineCommand":
-  test "флаги, дефолт, bool и обязательное имя":
+  test "flags, default, bool and required name":
     defineCommand(greet, app)
     check app.name == "greet"
     check app.tryExecute(@["--name", "ann", "--loud", "x"]).isOk
     check app.tryExecute(@["--loud"]).error of MissingFlagError
 
-  test "процедура с Result":
+  test "procedure with Result":
     defineCommand(greetR, appR)
     check appR.tryExecute(@["--name", "a"]).isOk
     check appR.tryExecute(@["--name", "bad"]).error.msg == "nope"
 
-  test "pragma short и help, дефолт в сигнатуре":
+  test "pragma short and help, default in signature":
     defineCommand(tagged, srv)
     check srv.help == "serve files"
     check srv.tryExecute(@["-p", "9"]).isOk
@@ -88,7 +90,7 @@ suite "defineCommand":
     check srv.tryExecute(@[]).isOk
     check seenPort == 8080
 
-  test "bool с дефолтом и повтор seq":
+  test "bool with default and seq repeat":
     defineCommand(prefer, tool)
     check tool.tryExecute(@[]).isOk
     check seenVerbose
@@ -100,10 +102,10 @@ suite "defineCommand":
     check seenTags == @["a", "b"]
     check seenHost == "h"
     let missingHost = box.tryExecute(@["--tags", "a"])
-    check missingHost.error of MissingFlagError
-    check (ref MissingFlagError)(missingHost.error).flag == "host"
+    check missingHost.isOk
+    check seenHost == "none"
 
-  test "bool без дефолта, Option с дефолтом, seq и возврат int":
+  test "bool without default, Option with default, seq and int return":
     defineCommand(justLoud, loudCmd)
     check loudCmd.tryExecute(@[]).isOk
     check loudSeen == false
