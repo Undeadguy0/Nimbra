@@ -19,6 +19,8 @@ import std/strutils
 from std/parseutils import parseInt, parseUInt, parseFloat
 from std/net import IpAddress, parseIpAddress
 from exceptions import ParsingFlagError, newParsingFlagError
+import options
+import paths
 
 type CliValue* = concept x
   ## Одно значение из одного токена. `seq` и `Option` сюда не входят:
@@ -131,3 +133,10 @@ proc fromString*(T: typedesc[IpAddress], r: string): IpAddress =
     parseIpAddress(r)
   except ValueError as e:
     raise newParsingFlagError("bad ip: " & e.msg, raw = r)
+
+proc fromString*[V: CliValue](T: typedesc[Option[V]], r: string): Option[V] =
+  return
+    if r == "":
+      V.none
+    else:
+      fromString(V, r).some

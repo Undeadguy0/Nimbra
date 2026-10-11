@@ -41,7 +41,6 @@ Everything is built upon three core classes: `Command`, `Flag`, and `ArgLimit`.
 - [ ] Add shell autocompletion support for `zsh`, `fish`, `bash`, and `pwsh`.
 - [ ] Add optional autocompletion support for `nushell`.
 
-> *Note for contributors: When updating this README, please keep both English and Russian versions in sync.*
 
 ---
 
@@ -83,6 +82,8 @@ clibra/
 | `stdconv.nim` | **Built-in parsers**: `CliValue` concept (`fromString(typedesc[T], string)`), `argHint` for help, `fromString` overloads for `int`, `uint`, `float`, `char`, `string`, `bool`, enums, `IpAddress`. |
 | `definecmd.nim` | **Cligen-like macro**: `defineCommand` macro transforms a procedure signature into command construction (`newCommand` + `addFlag` + `setRun`). Supports `short`/`help` pragmas, scalar/`seq`/`Option` parameters, `Result[void, E]` return for error handling. |
 
+> *Note for contributors: When updating this README, please keep both English and Russian versions in sync.*
+
 ---
 
 <a name="russian"></a>
@@ -121,7 +122,6 @@ clibra/
 - [ ] Добавить поддержку автодополнения в `zsh`, `fish`, `bash` и `pwsh`.
 - [ ] Добавить поддержку автодополнения в `nushell` (опционально).
 
-> *Примечание для контрибьюторов: При обновлении этого файла, пожалуйста, синхронизируйте изменения в английской и русской версиях.*
 
 ---
 
@@ -162,3 +162,5 @@ clibra/
 | `exceptions.nim` | **Иерархия ошибок**: `CliError` (база), `ParsingFlagError` (флаг + raw), `MissingFlagError` (флаг), `CliSettingError` (флаг), `ArgCountError` (got/min/max), конструкторы, форматтер `$`, `gracefulHandle`, `toCliError` для работы с Result. |
 | `stdconv.nim` | **Встроенные парсеры**: концепт `CliValue` (`fromString(typedesc[T], string)`), `argHint` для help, перегрузки `fromString` для `int`, `uint`, `float`, `char`, `string`, `bool`, перечисления, `IpAddress`. |
 | `definecmd.nim` | **Макрос в стиле cligen**: `defineCommand` превращает сигнатуру процедуры в построение команды (`newCommand` + `addFlag` + `setRun`). Поддерживает прагмы `short`/`help`, параметры-скаляры/`seq`/`Option`, возврат `Result[void, E]` для обработки ошибок. |
+
+> *Примечание для контрибьюторов: При обновлении этого файла, пожалуйста, синхронизируйте изменения в английской и русской версиях.*
