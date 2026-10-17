@@ -20,7 +20,7 @@ from std/parseutils import parseInt, parseUInt, parseFloat
 from std/net import IpAddress, parseIpAddress
 from exceptions import ParsingFlagError, newParsingFlagError
 import options
-import paths
+import std/paths
 
 type CliValue* = concept x
   ## Одно значение из одного токена. `seq` и `Option` сюда не входят:
