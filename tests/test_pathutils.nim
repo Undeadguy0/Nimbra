@@ -1,9 +1,9 @@
+import std/options
 import std/os
 import std/paths
 import std/tempfiles
 import std/unittest
 import nimbra
-import pathutils
 
 suite "pathutils":
   setup:
@@ -59,3 +59,23 @@ suite "pathutils":
       let p: Path = d)
     check not compiles(block:
       let s: string = d)
+
+  test "path types work as flag types":
+    var
+      dir: DirPath
+      file: FilePath
+      outp: FreePath
+    let root = newCommand("app")
+    root.addFlag("dir", dir, short = some('d'))
+    root.addFlag("file", file)
+    root.addFlag("out", outp)
+    root.execute(@["-d", "sub", "--file", tmp / "file.txt", "--out=new.txt"])
+    check $dir == tmp / "sub"
+    check $file == tmp / "file.txt"
+    check $outp == tmp / "new.txt"
+    try:
+      root.execute(@["--dir", "file.txt"])
+      check false
+    except ParsingFlagError as e:
+      check e.flag == "dir"
+      check e.raw == "file.txt"
