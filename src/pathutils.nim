@@ -18,23 +18,12 @@ type
 
   PathWrap* = FreePath | DirPath | FilePath | SymPath
 
-template getRoot(): string =
-  when defined(windows):
-    block:
-      var root: string
-      for p in parentDirs(os.getCurrentDir(), fromRoot = true):
-        root = p
-        break
-      root
-  else:
-    "/"
-
 proc fromString*[P: FreePath | DirPath | FilePath | SymPath](
     t: typedesc[P], r: string
 ): P =
   var fullPath = Path(r)
   if not fullPath.isAbsolute:
-    fullPath = joinPath(Path(getRoot()), fullPath)
+    fullPath = absolutePath(fullPath)
   let s = $fullPath
 
   when P is FreePath:
@@ -44,7 +33,7 @@ proc fromString*[P: FreePath | DirPath | FilePath | SymPath](
         ParsingFlagError, "FreePath: parent directory does not exist: " & parent
       )
     if symlinkExists(s) or fileExists(s) or dirExists(s):
-      raise newException(ParsingFlagError "FreePath: path already exists: " & s)
+      raise newException(ParsingFlagError, "FreePath: path already exists: " & s)
   elif P is DirPath:
     if symlinkExists(s):
       raise newException(
