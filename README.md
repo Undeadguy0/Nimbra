@@ -118,6 +118,28 @@ HELLO, Ann
 - `-4`, `-1.5`, `-.5`, `-1e3` are positionals unless the command has that digit as a short flag. A lone `-` is a positional.
 - A command that has subcommands but no `setRun` rejects positionals with `UnknownCommandError` (word, command, available subcommands).
 
+### Help and version
+
+- `-h` / `--help` work on every command with no declaration: the help of the selected command goes to stdout, exit code 0, no hooks run. It is detected before any value is parsed, so it wins over required flags and over errors in other flags. If a command defines its own `--help` flag or `-h` short, that one is left alone.
+- Set `root.version = "1.2.3"` to enable `-V` / `--version` on the root: prints `<root name> 1.2.3`.
+- A command that has subcommands and no `setRun`, called without positionals (`app`, `app mid`), prints its help and exits 0 (its hooks do not run).
+- Fields on `Command`: `help` (first line goes into the parent's command list), `argsHint` (positionals in the Usage line, e.g. `<preset>`), `epilog` (verbatim text at the end: environment, exit codes).
+- Flag lines show the short name, long name with aliases, a `<hint>` (`argHint`, e.g. `<int>`, `<Add|Min|Mul>` for enums, `<string,...>` for separated lists), the help text, `(required)` or `(default: X)`.
+- `helpText(root, @["set"])`, `helpText(parsed)` and `versionText(root)` return the text without printing.
+
+```
+$ theme set --help
+activate a preset
+
+Usage:
+  theme set [flags] <preset>
+
+Flags:
+      --only <string,...>  comma-separated parts
+  -n, --dry-run            print what would happen
+  -h, --help               show this help
+```
+
 ### Errors
 
 - `execute` raises a `CliError` descendant and neither prints nor exits.
@@ -147,7 +169,6 @@ Steps 4-5 also run when `setRun` raises. Every post-hook runs even if an earlier
 
 - [ ] Add support for using asynchronous (`async`) functions as executable commands.
 - [ ] Add `{.aliases.}` pragma support for aliases when using `defineCommand`.
-- [ ] Add automatic generation of the `--help` flag and its content without explicit declaration.
 - [ ] Add shell autocompletion support for `zsh`, `fish`, `bash`, and `pwsh`.
 - [ ] Add optional autocompletion support for `nushell`.
 
@@ -180,7 +201,8 @@ nimbra/
 │   ├── test_readme.nim     # Every nim block of this README must compile
 │   ├── test_interspersed.nim  # Flags anywhere, command lookup, unknown command
 │   ├── test_list_sep.nim   # List separator, explicit empty string
-│   └── test_exit_codes.nim # Exit codes, int handlers, post hook errors (+ exit_demo_app.nim fixture)
+│   ├── test_exit_codes.nim # Exit codes, int handlers, post hook errors (+ exit_demo_app.nim fixture)
+│   └── test_help.nim       # Automatic help and version, exact help text
 ├── examples/               # Example applications
 │   └── simple_calc/        # Simple calculator CLI example
 ├── nimbra.nimble           # Nimble package manifest
@@ -317,6 +339,15 @@ HELLO, Ann
 - `-4`, `-1.5`, `-.5`, `-1e3` — позиционные, если у команды нет такого короткого флага-цифры. Одиночный `-` — позиционный.
 - Команда, у которой есть подкоманды, но нет `setRun`, отвергает позиционные ошибкой `UnknownCommandError` (слово, команда, доступные подкоманды).
 
+### Help и версия
+
+- `-h` / `--help` работают у каждой команды без объявления: help выбранной команды уходит в stdout, код выхода 0, хуки не вызываются. Они ищутся до разбора значений, поэтому важнее обязательных флагов и ошибок в других флагах. Если команда сама объявила флаг `--help` или короткое `-h`, он не трогается.
+- `root.version = "1.2.3"` включает `-V` / `--version` у корня: печатает `<имя корня> 1.2.3`.
+- Команда с подкомандами и без `setRun`, вызванная без позиционных (`app`, `app mid`), печатает свой help и выходит с 0 (её хуки не вызываются).
+- Поля `Command`: `help` (первая строка идёт в список подкоманд родителя), `argsHint` (позиционные в строке Usage, например `<preset>`), `epilog` (текст в конце как есть: окружение, коды выхода).
+- Строка флага: короткое имя, длинное с алиасами, `<hint>` (`argHint`: `<int>`, `<Add|Min|Mul>` у enum, `<string,...>` у списка с разделителем), текст help, `(required)` или `(default: X)`.
+- `helpText(root, @["set"])`, `helpText(parsed)` и `versionText(root)` возвращают текст, ничего не печатая.
+
 ### Ошибки
 
 - `execute` кидает наследника `CliError`, ничего не печатает и не завершает процесс.
@@ -346,7 +377,6 @@ HELLO, Ann
 
 - [ ] Добавить возможность использования асинхронных (`async`) функций как исполняемых команд.
 - [ ] Добавить прагму `{.aliases.}` для псевдонимов при использовании `defineCommand`.
-- [ ] Добавить автогенерацию флага `--help` и его содержимого без явного указания.
 - [ ] Добавить поддержку автодополнения в `zsh`, `fish`, `bash` и `pwsh`.
 - [ ] Добавить поддержку автодополнения в `nushell` (опционально).
 
@@ -379,7 +409,8 @@ nimbra/
 │   ├── test_readme.nim     # Каждый nim-блок этого README обязан компилироваться
 │   ├── test_interspersed.nim  # Флаги где угодно, поиск команды, неизвестная команда
 │   ├── test_list_sep.nim   # Разделитель списка, явная пустая строка
-│   └── test_exit_codes.nim # Коды выхода, int-обработчики, ошибки post-хуков (+ фикстура exit_demo_app.nim)
+│   ├── test_exit_codes.nim # Коды выхода, int-обработчики, ошибки post-хуков (+ фикстура exit_demo_app.nim)
+│   └── test_help.nim       # Автоматические help и version, точный текст help
 ├── examples/               # Примеры приложений
 │   └── simple_calc/        # Пример простого калькулятора CLI
 ├── nimbra.nimble           # Манифест пакета Nimble
