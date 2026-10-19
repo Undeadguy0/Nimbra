@@ -24,6 +24,13 @@ type
     help*: string
     persistent*: bool
     takesValue*: bool
+    hint*: string
+      ## Плейсхолдер значения в help (`int`, `Fast|Slow`). Пусто у bool.
+      ## Value placeholder in help (`int`, `Fast|Slow`). Empty for bool.
+    required*: bool
+    defaultText*: string
+      ## Дефолт для help; пусто, если дефолта нет или его нельзя показать.
+      ## Default for help; empty when there is none or it cannot be shown.
     onValue*: proc(raw: string) {.closure.}
     onAbsent*: proc() {.closure.}
 
@@ -108,6 +115,11 @@ proc invokeValue*(s: FlagSet, i: int, raw: string) =
 proc invokeAbsent*(s: FlagSet, i: int) =
   let fn = s.flags[i].onAbsent
   fn()
+
+proc all*(s: FlagSet): seq[Flag] =
+  ## Флаги в порядке регистрации (для help).
+  ## Flags in registration order (for help).
+  s.flags
 
 proc persistentFlags*(s: FlagSet): seq[Flag] =
   ## Копии для потомков. Замыкание общее, индекс у потомка будет свой.

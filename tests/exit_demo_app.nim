@@ -19,7 +19,7 @@ code.setRun proc(args: seq[string]): int =
   4
 fine.setRun proc(args: seq[string]) =
   echo "fine"
-need.addFlag("n", n, short = some('n'), required = true, help = "(required)")
+need.addFlag("n", n, short = some('n'), required = true)
 root.add boom
 root.add code
 root.add need

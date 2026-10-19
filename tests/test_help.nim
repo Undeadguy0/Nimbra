@@ -163,10 +163,9 @@ suite "help request":
     check theme.parse(@["-V"]).version
     check theme.parse(@["--version"]).version
     check theme.versionText() == "theme 0.3.0\n"
-    check theme.parse(@["serve", "--version"]).version == false
+    check theme.tryExecute(@["serve", "--version"]).error of ParsingFlagError
     check theme.tryExecute(@["serve", "-V"]).error of ParsingFlagError
     let plain = newCommand("app")
-    check plain.parse(@["x"]).version == false
     check plain.tryExecute(@["-V"]).error of ParsingFlagError
     check newCommand("app").versionText() == ""
 
@@ -179,14 +178,14 @@ suite "help request":
   test "bare parent without run shows help, others do not":
     let theme = sample()
     check theme.parse(@[]).help == false
-    check theme.wantsHelp(theme.parse(@[]))
+    check theme.parse(@[]).wantsHelp
     theme.setRun proc(args: seq[string]) = discard
-    check not theme.wantsHelp(theme.parse(@[]))
+    check not theme.parse(@[]).wantsHelp
     let leaf = newCommand("leaf")
-    check not leaf.wantsHelp(leaf.parse(@[]))
+    check not leaf.parse(@[]).wantsHelp
     let parent = newCommand("p")
     parent.add newCommand("c")
-    check not parent.wantsHelp(parent.parse(@["x"]))
+    check not parent.parse(@["x"]).wantsHelp
 
 suite "flag hints":
   test "argHint for enum lists the values":

@@ -33,6 +33,14 @@ proc argHint*[T](_: typedesc[T]): string =
   ## Fallback help placeholder. Not part of the concept.
   "value"
 
+proc argHint*[E: enum](_: typedesc[E]): string =
+  ## Значения enum через `|`: `Fast|Slow`.
+  ## Enum values joined by `|`: `Fast|Slow`.
+  for v in low(E) .. high(E):
+    if result.len > 0:
+      result.add "|"
+    result.add $v
+
 proc argHint*(_: typedesc[int]): string =
   "int"
 

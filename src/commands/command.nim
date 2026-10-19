@@ -36,6 +36,7 @@ import std/options
 import std/os
 from std/parseutils import parseFloat
 import std/strutils
+import std/sequtils
 import results
 import ../exceptions
 import ../stdconv
@@ -52,6 +53,19 @@ type
     ## A tree node. Children are a seq; order is needed for help and lookup.
     name*: string
     help*: string
+      ## Описание команды: первая строка идёт в список подкоманд родителя,
+      ## целиком — в начало её собственного help.
+      ## Command description: the first line goes into the parent's command
+      ## list, the whole text opens its own help.
+    version*: string
+      ## Версия. Задана у корня — работают `-V` / `--version`.
+      ## Version. Set on the root, `-V` / `--version` work.
+    epilog*: string
+      ## Текст в конце help как есть (окружение, коды выхода).
+      ## Text at the end of help, verbatim (environment, exit codes).
+    argsHint*: string
+      ## Позиционные в строке Usage как есть: `<preset>`.
+      ## Positionals in the Usage line, verbatim: `<preset>`.
     aliases: seq[string]
     argLimit*: ArgLimit
     runImpl: Option[Handler]
@@ -68,6 +82,12 @@ type
     ## Parse result without hooks. `path[0]` is the root, the last item is the selected command.
     path*: seq[Command]
     args*: seq[string]
+    help*: bool
+      ## Встретился `-h` / `--help`. Остальные флаги не разбирались.
+      ## `-h` / `--help` was present. The other flags were not parsed.
+    version*: bool
+      ## Встретился `-V` / `--version` у корня с версией (и нет help).
+      ## `-V` / `--version` on a root with a version (and no help).
 
 proc newCommand*(name: string, help = "", aliases: seq[string] = @[]): Command =
   ## Корень тоже создаётся здесь. Пустое имя допустимо только у корня:
@@ -197,6 +217,22 @@ proc guardPolicy(name: string, required: bool, hasDefault: bool, isBool: bool) =
   if required and isBool:
     raiseCli("bool flag cannot be required", name)
 
+proc showDefault[T](d: Option[T]): string =
+  ## Дефолт для help. Типы без `$` и пустые строки не показываются.
+  ## Default for help. Types without `$` and empty strings are not shown.
+  if d.isNone:
+    return ""
+  when compiles($d.get):
+    result = $d.get
+  else:
+    result = ""
+
+proc listHint(inner: string, sep: Option[char]): string =
+  if sep.isSome:
+    inner & $sep.get & "..."
+  else:
+    inner & "..."
+
 template stamp(name, raw: string, body: untyped) =
   ## Дописывает имя и raw в уже поднятый `ParsingFlagError` и кидает его дальше.
   ## Шаблон, а не proc: запись в переменную остаётся в замыкании флага.
@@ -230,6 +266,7 @@ proc addFlag*[T: CliValue](
   ## Без `required` и без явного дефолта отсутствие переменную не трогает.
   ## Scalar. The last mention replaces the value.
   ## Without `required` and without an explicit default, absence leaves the variable alone.
+  mixin argHint
   when T is bool:
     guardPolicy(name, required, default.isSome, true)
     const takes = false
@@ -284,6 +321,9 @@ proc addFlag*[T: CliValue](
       help: help,
       persistent: persistent,
       takesValue: takes,
+      hint: (when T is bool: "" else: argHint(T)),
+      required: must,
+      defaultText: showDefault(fallback),
       onValue: onValue,
       onAbsent: onAbsent,
     )
@@ -311,6 +351,7 @@ proc addFlag*[T: CliValue](
   ## list default. With `sep` the value is split on the separator
   ## (`--only a,b`), empty segments are skipped, an empty value adds nothing.
   ## `ParsingFlagError.raw` carries the segment, not the whole token.
+  mixin argHint
   guardPolicy(name, required, default.isSome, false)
   let
     canonical = name
@@ -348,6 +389,8 @@ proc addFlag*[T: CliValue](
       help: help,
       persistent: persistent,
       takesValue: true,
+      hint: listHint(argHint(T), splitter),
+      required: must,
       onValue: onValue,
       onAbsent: onAbsent,
     )
@@ -368,6 +411,7 @@ proc addFlag*[T: CliValue](
   ## Отсутствие без дефолта и без `required` ставит `none`, даже если там уже было значение.
   ## `default` is the inner `T`. The variable receives `some`, not a nested option.
   ## Absence without a default and without `required` stores `none`, even if a value was already there.
+  mixin argHint
   guardPolicy(name, required, default.isSome, false)
   let
     canonical = name
@@ -400,6 +444,9 @@ proc addFlag*[T: CliValue](
       help: help,
       persistent: persistent,
       takesValue: true,
+      hint: argHint(T),
+      required: must,
+      defaultText: showDefault(fallback),
       onValue: onValue,
       onAbsent: onAbsent,
     )
@@ -482,6 +529,20 @@ proc skipFlag(cmd: Command, tokens: seq[string], i: var int): bool =
   if takesNext and i < tokens.len and tokens[i] != "--":
     inc i
   true
+
+proc isHelpToken(cmd: Command, tok: string): bool =
+  ## `--help` и `-h`, пока команда не занимает эти имена сама.
+  ## `--help` and `-h`, unless the command takes these names itself.
+  (tok == "--help" and cmd.flags.findLong("help").isNone) or
+    (tok == "-h" and cmd.flags.findShort('h').isNone)
+
+proc isVersionToken(root, cmd: Command, tok: string): bool =
+  ## Только у корня с заданной версией.
+  ## Only on a root that has a version.
+  if cmd != root or root.version.len == 0:
+    return false
+  (tok == "--version" and cmd.flags.findLong("version").isNone) or
+    (tok == "-V" and cmd.flags.findShort('V').isNone)
 
 proc parseLong(
     cmd: Command, tok: string, tokens: seq[string], i: var int, seen: var seq[bool]
@@ -593,6 +654,32 @@ proc parse*(root: Command, tokens: seq[string]): Parsed =
   if i < tokens.len:
     rest.add tokens[i .. ^1]
 
+  # Help и version: до разбора значений, чтобы не мешали ни обязательные
+  # флаги, ни ошибки в других флагах. Значение флага перешагивается.
+  # Help and version: before values are parsed, so neither required flags
+  # nor errors in other flags get in the way. A flag value is stepped over.
+  var
+    askHelp = false
+    askVersion = false
+    j = 0
+  while j < rest.len:
+    let tok = rest[j]
+    if tok == "--":
+      break
+    if isHelpToken(current, tok):
+      askHelp = true
+      break
+    if isVersionToken(root, current, tok):
+      askVersion = true
+      inc j
+    elif isFlagToken(current, tok):
+      if not skipFlag(current, rest, j):
+        inc j
+    else:
+      inc j
+  if askHelp or askVersion:
+    return Parsed(path: path, args: @[], help: askHelp, version: askVersion and not askHelp)
+
   var seen = newSeq[bool](current.flags.len)
   var args: seq[string]
   i = 0
@@ -611,6 +698,116 @@ proc parse*(root: Command, tokens: seq[string]): Parsed =
       inc i
   finishAbsent(current, seen)
   Parsed(path: path, args: args)
+
+proc table(rows: seq[tuple[left, right: string]]): string =
+  ## Две колонки: два пробела отступа, левая колонка по максимуму, два пробела.
+  ## Two columns: two spaces of indent, the left column padded to the widest, two spaces.
+  var width = 0
+  for r in rows:
+    width = max(width, r.left.len)
+  for i, r in rows:
+    if i > 0:
+      result.add "\n"
+    var line = "  " & r.left.alignLeft(width)
+    if r.right.len > 0:
+      line.add "  " & r.right
+    result.add line.strip(leading = false)
+
+proc trimEnd(s: string): string =
+  s.strip(leading = false, chars = {'\n', ' '})
+
+proc flagRows(path: seq[Command]): seq[tuple[left, right: string]] =
+  let cmd = path[^1]
+  for f in cmd.flags.all:
+    var left = (if f.short.isSome: "-" & $f.short.get & ", " else: "    ")
+    left.add "--" & f.name
+    for a in f.aliases:
+      left.add ", --" & a
+    if f.takesValue and f.hint.len > 0:
+      left.add " <" & f.hint & ">"
+    var notes: seq[string]
+    if f.help.len > 0:
+      notes.add f.help
+    if f.required:
+      notes.add "(required)"
+    elif f.defaultText.len > 0:
+      notes.add "(default: " & f.defaultText & ")"
+    result.add (left, notes.join(" "))
+  proc auto(longName: string, shortCh: char, free: tuple[l, s: bool], text: string):
+      tuple[left, right: string] =
+    if free.l and free.s:
+      ("-" & $shortCh & ", --" & longName, text)
+    elif free.l:
+      ("    --" & longName, text)
+    else:
+      ("-" & $shortCh, text)
+  let
+    helpFree = (l: cmd.flags.findLong("help").isNone, s: cmd.flags.findShort('h').isNone)
+    verFree = (l: cmd.flags.findLong("version").isNone, s: cmd.flags.findShort('V').isNone)
+  if helpFree.l or helpFree.s:
+    result.add auto("help", 'h', helpFree, "show this help")
+  if path.len == 1 and cmd.version.len > 0 and (verFree.l or verFree.s):
+    result.add auto("version", 'V', verFree, "print version")
+
+proc helpText*(path: seq[Command]): string =
+  ## Текст help выбранной команды (последняя в `path`). Только простой
+  ## текст, порядок — как при регистрации; вывод детерминирован.
+  ## Help text of the selected command (the last in `path`). Plain text,
+  ## registration order; the output is deterministic.
+  let cmd = path[^1]
+  var blocks: seq[string]
+  if cmd.help.len > 0:
+    blocks.add trimEnd(cmd.help)
+  var names: seq[string]
+  for c in path:
+    if c.name.len > 0:
+      names.add c.name
+  var usage = "  " & names.join(" ")
+  if cmd.subcommands.len > 0:
+    usage.add " <command>"
+  usage.add " [flags]"
+  if cmd.argsHint.len > 0:
+    usage.add " " & cmd.argsHint
+  blocks.add "Usage:\n" & usage
+  if cmd.subcommands.len > 0:
+    var rows: seq[tuple[left, right: string]]
+    for child in cmd.subcommands:
+      let label = (@[child.name] & child.aliases).join(", ")
+      let firstLine = child.help.splitLines()[0]
+      rows.add (label, firstLine)
+    blocks.add "Commands:\n" & table(rows)
+  blocks.add "Flags:\n" & table(flagRows(path))
+  if cmd.epilog.len > 0:
+    blocks.add trimEnd(cmd.epilog)
+  blocks.join("\n\n") & "\n"
+
+proc helpText*(parsed: Parsed): string =
+  helpText(parsed.path)
+
+proc helpText*(root: Command, names: seq[string] = @[]): string =
+  ## Help по имени пути без разбора флагов: `helpText(root, @["set"])`.
+  ## Help by a name path, without parsing flags: `helpText(root, @["set"])`.
+  var path = @[root]
+  for n in names:
+    let child = findChild(path[^1], n)
+    if child.isNone:
+      raise newUnknownCommandError(n, path[^1].name, path[^1].subcommands.mapIt(it.name))
+    path.add child.get
+  helpText(path)
+
+proc versionText*(root: Command): string =
+  ## `имя версия\n`; пусто, если версия не задана.
+  ## `name version\n`; empty when no version is set.
+  if root.version.len == 0:
+    return ""
+  (if root.name.len > 0: root.name & " " else: "") & root.version & "\n"
+
+proc wantsHelp*(parsed: Parsed): bool =
+  ## Родитель без своего run и без позиционных: показываем help.
+  ## A parent without its own run and without positionals: show help.
+  let cmd = parsed.path[^1]
+  parsed.args.len == 0 and cmd.subcommands.len > 0 and cmd.runImpl.isNone and
+    cmd.runCodeImpl.isNone
 
 proc describeLimit(limit: ArgLimit): string =
   if limit.max.isSome and limit.max.get == limit.min:
@@ -689,6 +886,12 @@ proc executeCode*(root: Command, tokens: seq[string] = commandLineParams()): int
   ## Like `execute`, but returns the exit code of an int handler (0 when the
   ## handler has no code or there is none).
   let parsed = parse(root, tokens)
+  if parsed.version:
+    stdout.write versionText(root)
+    return 0
+  if parsed.help or parsed.wantsHelp:
+    stdout.write helpText(parsed)
+    return 0
   checkCommand(parsed.path[^1], parsed.args)
   checkArgs(parsed.path[^1], parsed.args)
   runHooks(parsed)

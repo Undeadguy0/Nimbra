@@ -63,3 +63,10 @@ suite "examples":
     let r = run(calc, ["1", "-2.5", "-o", "Add"])
     check r.code == 0
     check r.stdout.strip == "-1.5"
+
+  test "simple_calc has automatic --help":
+    let r = run(calc, ["--help"])
+    check r.code == 0
+    check r.stdout.startsWith("Usage:\n  calc [flags]\n")
+    check "-o, --operation <Add|Min|Mul>" in r.stdout
+    check "(required)" in r.stdout
