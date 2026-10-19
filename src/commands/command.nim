@@ -34,6 +34,7 @@
 
 import std/options
 import std/os
+from std/parseutils import parseFloat
 import std/strutils
 import results
 import ../exceptions
@@ -356,11 +357,30 @@ proc isLongFlag(tok: string): bool =
 proc isShortFlag(tok: string): bool =
   tok.len >= 2 and tok[0] == '-' and tok[1] != '-'
 
+proc looksNegativeNumber(tok: string): bool =
+  ## `-` и дальше число на весь токен: `-4`, `-3.5`, `-.5`, `-1e3`.
+  ## `-` followed by a number filling the whole token: `-4`, `-3.5`, `-.5`, `-1e3`.
+  if tok.len < 2 or tok[0] != '-' or tok[1] notin {'0' .. '9', '.'}:
+    return false
+  var f = 0.0
+  try:
+    parseFloat(tok, f) == tok.len
+  except ValueError:
+    false
+
+proc isNegativeNumber(cmd: Command, tok: string): bool =
+  ## Короткий флаг-цифра, если он зарегистрирован, важнее числа.
+  ## A registered digit short flag wins over the number.
+  looksNegativeNumber(tok) and cmd.flags.findShort(tok[1]).isNone
+
+proc isFlagToken(cmd: Command, tok: string): bool =
+  (isLongFlag(tok) or isShortFlag(tok)) and not isNegativeNumber(cmd, tok)
+
 proc missingValue(flagName, raw: string) {.noreturn.} =
   raise newParsingFlagError("missing value", raw = raw, flag = flagName)
 
-proc unknownFlag(flagName, raw: string) {.noreturn.} =
-  raise newParsingFlagError("unknown flag", raw = raw, flag = flagName)
+proc unknownFlag(flagName, raw: string, isShort = false) {.noreturn.} =
+  raise newParsingFlagError("unknown flag", raw = raw, flag = flagName, isShort = isShort)
 
 proc takeNext(tokens: seq[string], i: var int, flagName, raw: string): string =
   if i + 1 >= tokens.len or tokens[i + 1] == "--":
@@ -368,21 +388,51 @@ proc takeNext(tokens: seq[string], i: var int, flagName, raw: string): string =
   result = tokens[i + 1]
   inc i
 
+proc splitLong(tok: string): tuple[key, raw: string, hasEq: bool] =
+  let body = tok[2 .. ^1]
+  let eq = body.find('=')
+  if eq >= 0:
+    (body[0 ..< eq], body[eq + 1 .. ^1], true)
+  else:
+    (body, "", false)
+
+proc skipFlag(cmd: Command, tokens: seq[string], i: var int): bool =
+  ## Поиск команды: перешагнуть флаг и его значение, ничего не вызывая.
+  ## `false` — флаг этой команде неизвестен: поиск команды на этом стоп,
+  ## ошибку сообщит разбор флагов.
+  ## Command lookup: step over a flag and its value without calling anything.
+  ## `false` means this command does not know the flag: the lookup stops here
+  ## and flag parsing reports the error.
+  let tok = tokens[i]
+  var takesNext = false
+  if isLongFlag(tok):
+    let (key, _, hasEq) = splitLong(tok)
+    let idx = cmd.flags.findLong(key)
+    if idx.isNone:
+      return false
+    takesNext = cmd.flags.takesValue(idx.get) and not hasEq
+  else:
+    let cluster = tok[1 .. ^1]
+    var k = 0
+    while k < cluster.len:
+      let idx = cmd.flags.findShort(cluster[k])
+      if idx.isNone:
+        return false
+      if cmd.flags.takesValue(idx.get):
+        takesNext = k + 1 == cluster.len
+        break
+      if k + 1 < cluster.len and cluster[k + 1] == '=':
+        break
+      inc k
+  inc i
+  if takesNext and i < tokens.len and tokens[i] != "--":
+    inc i
+  true
+
 proc parseLong(
     cmd: Command, tok: string, tokens: seq[string], i: var int, seen: var seq[bool]
 ) =
-  let body = tok[2 .. ^1]
-  let eq = body.find('=')
-  var
-    key: string
-    raw: string
-    hasEq = false
-  if eq >= 0:
-    key = body[0 ..< eq]
-    raw = body[eq + 1 .. ^1]
-    hasEq = true
-  else:
-    key = body
+  var (key, raw, hasEq) = splitLong(tok)
   if key.len == 0:
     unknownFlag("", tok)
   let idxOpt = cmd.flags.findLong(key)
@@ -403,18 +453,25 @@ proc parseLong(
 proc parseShort(
     cmd: Command, tok: string, tokens: seq[string], i: var int, seen: var seq[bool]
 ) =
+  ## `-abc` — кластер. Флаг со значением забирает остаток кластера
+  ## (`-p80`, `-p=80`) или следующий токен. Bool принимает `-v=false`.
+  ## `-abc` is a cluster. A value flag takes the rest of the cluster
+  ## (`-p80`, `-p=80`) or the next token. A bool accepts `-v=false`.
   let cluster = tok[1 .. ^1]
   var k = 0
   while k < cluster.len:
     let ch = cluster[k]
     let idxOpt = cmd.flags.findShort(ch)
     if idxOpt.isNone:
-      unknownFlag($ch, tok)
+      unknownFlag($ch, tok, isShort = true)
     let idx = idxOpt.get
     let canonical = cmd.flags.longName(idx)
+    let hasEq = k + 1 < cluster.len and cluster[k + 1] == '='
     if cmd.flags.takesValue(idx):
       var raw: string
-      if k + 1 < cluster.len:
+      if hasEq:
+        raw = cluster[k + 2 .. ^1]
+      elif k + 1 < cluster.len:
         raw = cluster[k + 1 .. ^1]
       else:
         raw = takeNext(tokens, i, canonical, tok)
@@ -422,6 +479,9 @@ proc parseShort(
       cmd.flags.invokeValue(idx, raw)
       break
     seen[idx] = true
+    if hasEq:
+      cmd.flags.invokeValue(idx, cluster[k + 2 .. ^1])
+      break
     cmd.flags.invokeValue(idx, "true")
     inc k
   inc i
@@ -432,38 +492,69 @@ proc finishAbsent(cmd: Command, seen: seq[bool]) =
       cmd.flags.invokeAbsent(idx)
 
 proc parse*(root: Command, tokens: seq[string]): Parsed =
-  ## Команды, потом флаги выбранной команды, потом хвост позиционных.
+  ## Два прохода.
+  ##
+  ## 1. Поиск команды. Флаги, известные текущей команде, перешагиваются
+  ##    вместе со значением, так что persistent-флаг корня можно написать
+  ##    до подкоманды. Поиск стоп на `--`, на первом позиционном, который не
+  ##    подкоманда, и на флаге, неизвестном текущей команде.
+  ## 2. Флаги выбранной команды в любом месте остатка, между позиционными
+  ##    тоже. `--` заканчивает флаги. Отрицательное число (`-4`, `-1.5`) —
+  ##    позиционный, если у команды нет такого короткого флага-цифры.
+  ##
   ## Отметки «флаг встретился» живут только в этом вызове.
-  ## Commands, then flags of the selected command, then the positional tail.
+  ##
+  ## Two passes.
+  ##
+  ## 1. Command lookup. Flags known to the current command are stepped over
+  ##    with their value, so a root persistent flag may come before the
+  ##    subcommand. The lookup stops at `--`, at the first positional that is
+  ##    not a subcommand, and at a flag the current command does not know.
+  ## 2. Flags of the selected command anywhere in the rest, between
+  ##    positionals too. `--` ends flags. A negative number (`-4`, `-1.5`) is
+  ##    a positional unless the command has that digit as a short flag.
+  ##
   ## "Flag was seen" marks live only for this call.
   var
     path = @[root]
     current = root
+    rest: seq[string]
     i = 0
   while i < tokens.len:
     let tok = tokens[i]
     if tok == "--":
       break
+    if isFlagToken(current, tok):
+      let start = i
+      if not skipFlag(current, tokens, i):
+        break
+      rest.add tokens[start ..< i]
+      continue
     let child = findChild(current, tok)
     if child.isNone:
       break
     current = child.get
     path.add current
     inc i
+  if i < tokens.len:
+    rest.add tokens[i .. ^1]
+
   var seen = newSeq[bool](current.flags.len)
   var args: seq[string]
-  while i < tokens.len:
-    let tok = tokens[i]
+  i = 0
+  while i < rest.len:
+    let tok = rest[i]
     if tok == "--":
-      args.add tokens[i + 1 .. ^1]
+      args.add rest[i + 1 .. ^1]
       break
-    elif isLongFlag(tok):
-      parseLong(current, tok, tokens, i, seen)
-    elif isShortFlag(tok):
-      parseShort(current, tok, tokens, i, seen)
+    elif isFlagToken(current, tok):
+      if isLongFlag(tok):
+        parseLong(current, tok, rest, i, seen)
+      else:
+        parseShort(current, tok, rest, i, seen)
     else:
-      args.add tokens[i .. ^1]
-      break
+      args.add tok
+      inc i
   finishAbsent(current, seen)
   Parsed(path: path, args: args)
 
