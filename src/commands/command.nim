@@ -11,6 +11,26 @@
 ## Required, default, and the meaning of bool live in the closure that
 ## `addFlag` builds. There is no parent pointer: the root..leaf path
 ## lives in `Parsed`.
+##
+## Время жизни переменной
+## ----------------------
+##
+## `addFlag` запоминает адрес `output`, а не копию. Переменная обязана
+## жить, пока команда может разбираться: до последнего `parse` / `execute`
+## этого дерева. Глобальная переменная или локальная в той же процедуре,
+## где вызывается `execute`, — безопасно. Локальная переменная процедуры,
+## которая только собирает дерево и возвращает `Command`, — висячий
+## указатель: после возврата запись идёт в чужую память.
+##
+## Variable lifetime
+## -----------------
+##
+## `addFlag` stores the address of `output`, not a copy. The variable must
+## stay alive for as long as the command can be parsed: until the last
+## `parse` / `execute` of this tree. A global, or a local of the same
+## procedure that calls `execute`, is safe. A local of a procedure that only
+## builds the tree and returns the `Command` is a dangling pointer: after
+## that procedure returns, writes land in someone else's memory.
 
 import std/options
 import std/os
@@ -196,11 +216,11 @@ proc addFlag*[T: CliValue](
     canonical = name
     fallback = default
     must = required
-    # Замыкание не может захватить var-параметр. Берём адрес: переменная
-    # пользователя обязана жить до конца execute.
-    # A closure cannot capture a var parameter. Take the address: the user's
-    # variable must stay alive until execute returns.
-    slot = unsafeAddr output
+    # Замыкание не может захватить var-параметр, поэтому храним адрес.
+    # См. «Время жизни переменной» в описании модуля.
+    # A closure cannot capture a var parameter, so the address is stored.
+    # See "Variable lifetime" in the module doc.
+    slot = addr output
   let onValue = proc(raw: string) =
     if raw.len == 0 and fallback.isSome:
       slot[] = fallback.get
@@ -259,7 +279,7 @@ proc addFlag*[T: CliValue](
     canonical = name
     fallback = default
     must = required
-    slot = unsafeAddr output
+    slot = addr output
   let onValue = proc(raw: string) =
     stamp(canonical, raw):
       mixin fromString
@@ -302,7 +322,7 @@ proc addFlag*[T: CliValue](
     canonical = name
     fallback = default
     must = required
-    slot = unsafeAddr output
+    slot = addr output
   let onValue = proc(raw: string) =
     if raw.len == 0 and fallback.isSome:
       slot[] = some(fallback.get)
