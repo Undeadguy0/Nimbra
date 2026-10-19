@@ -140,19 +140,17 @@ proc isVoidResult(t: NimNode): bool =
     (t[1].kind == nnkEmpty or t[1].eqIdent("void"))
 
 macro defineCommand*(fn: typed, dest: untyped): untyped =
-  ## Декларативно конквертирует функцию-обработчик в Command.
-  ## Первый аргумент - обработчик, второй - имя будущей Command
+  ## Декларативно превращает процедуру-обработчик в `Command`.
+  ## Первый аргумент — обработчик, второй — имя переменной будущей `Command`.
+  ## Declaratively turns a handler procedure into a `Command`.
+  ## The first argument is the handler, the second is the name of the `Command` variable.
   let impl = fn.getImpl()
   if impl.kind notin {nnkProcDef, nnkFuncDef, nnkLambda}:
     error("defineCommand expects a procedure", fn)
   if impl.kind != nnkLambda and impl[2].kind != nnkEmpty:
     error("defineCommand supports concrete procedures only", fn)
 
-  let paramsNode =
-    if impl.kind == nnkLambda:
-      impl[3]
-    else:
-      impl[3]
+  let paramsNode = impl[3]
   let ret = paramsNode[0]
   let helpText =
     if impl.kind == nnkLambda:

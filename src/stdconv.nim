@@ -19,8 +19,7 @@ import std/strutils
 from std/parseutils import parseInt, parseUInt, parseFloat
 from std/net import IpAddress, parseIpAddress
 from exceptions import ParsingFlagError, newParsingFlagError
-import options
-import std/paths
+import std/options
 
 type CliValue* = concept x
   ## Одно значение из одного токена. `seq` и `Option` сюда не входят:
