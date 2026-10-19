@@ -58,3 +58,8 @@ suite "examples":
     let bad = run(calc, ["-o", "Add", "12abc"])
     check bad.code != 0
     check "12abc" in bad.stderr
+
+  test "simple_calc takes negative numbers and the flag after them":
+    let r = run(calc, ["1", "-2.5", "-o", "Add"])
+    check r.code == 0
+    check r.stdout.strip == "-1.5"
