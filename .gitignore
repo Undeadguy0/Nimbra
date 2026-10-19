@@ -3,3 +3,9 @@ AGENTS.md
 .cfg
 MANUAL.md
 nimble.paths
+# Собранные бинарники тестов и примеров / built test and example binaries
+tests/*
+!tests/*.nim
+examples/*/src/*
+!examples/*/src/*.nim
+nimcache/
