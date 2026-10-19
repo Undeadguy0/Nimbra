@@ -113,6 +113,8 @@ HELLO, Ann
 - Long flags: `--name value`, `--name=value`; a bool flag takes a value only with `=` (`--verbose=false`).
 - Short flags: `-p 80`, `-p80`, `-p=80`, clusters `-vx`, `-vp80`; a bool takes `-v=false`.
 - `--` ends flags: everything after it is positional.
+- List flags (`seq[T]`) collect every mention: `--tag a --tag b`. With `sep = some(',')` (or `{.sep: ','.}` in `defineCommand`) one value is split too: `--only a,b`; empty segments are skipped.
+- `--name=` gives an explicit empty string for string flags (the default is not used); for other types an empty value keeps the old meaning (default or parse error).
 - `-4`, `-1.5`, `-.5`, `-1e3` are positionals unless the command has that digit as a short flag. A lone `-` is a positional.
 - A command that has subcommands but no `setRun` rejects positionals with `UnknownCommandError` (word, command, available subcommands).
 
@@ -173,7 +175,8 @@ nimbra/
 │   ├── test_pathutils.nim  # Path type tests
 │   ├── test_examples.nim   # Builds and runs the examples as processes
 │   ├── test_readme.nim     # Every nim block of this README must compile
-│   └── test_interspersed.nim  # Flags anywhere, command lookup, unknown command
+│   ├── test_interspersed.nim  # Flags anywhere, command lookup, unknown command
+│   └── test_list_sep.nim   # List separator, explicit empty string
 ├── examples/               # Example applications
 │   └── simple_calc/        # Simple calculator CLI example
 ├── nimbra.nimble           # Nimble package manifest
@@ -305,6 +308,8 @@ HELLO, Ann
 - Длинные флаги: `--name value`, `--name=value`; bool-флаг берёт значение только через `=` (`--verbose=false`).
 - Короткие флаги: `-p 80`, `-p80`, `-p=80`, кластеры `-vx`, `-vp80`; bool принимает `-v=false`.
 - `--` заканчивает флаги: всё после него — позиционные.
+- Списочные флаги (`seq[T]`) собирают каждое упоминание: `--tag a --tag b`. С `sep = some(',')` (или `{.sep: ','.}` в `defineCommand`) одно значение тоже режется: `--only a,b`; пустые сегменты пропускаются.
+- `--name=` у строкового флага — явная пустая строка (дефолт не подставляется); у остальных типов пустое значение работает как раньше (дефолт или ошибка разбора).
 - `-4`, `-1.5`, `-.5`, `-1e3` — позиционные, если у команды нет такого короткого флага-цифры. Одиночный `-` — позиционный.
 - Команда, у которой есть подкоманды, но нет `setRun`, отвергает позиционные ошибкой `UnknownCommandError` (слово, команда, доступные подкоманды).
 
@@ -365,7 +370,8 @@ nimbra/
 │   ├── test_pathutils.nim  # Тесты типов путей
 │   ├── test_examples.nim   # Сборка и запуск примеров как процессов
 │   ├── test_readme.nim     # Каждый nim-блок этого README обязан компилироваться
-│   └── test_interspersed.nim  # Флаги где угодно, поиск команды, неизвестная команда
+│   ├── test_interspersed.nim  # Флаги где угодно, поиск команды, неизвестная команда
+│   └── test_list_sep.nim   # Разделитель списка, явная пустая строка
 ├── examples/               # Примеры приложений
 │   └── simple_calc/        # Пример простого калькулятора CLI
 ├── nimbra.nimble           # Манифест пакета Nimble
