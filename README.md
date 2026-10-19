@@ -122,7 +122,10 @@ HELLO, Ann
 
 - `execute` raises a `CliError` descendant and neither prints nor exits.
 - `tryExecute` returns `Result[void, ref CliError]`; other exceptions are not caught.
-- `executeOrQuit` prints `$err` to stderr and exits with code 1.
+- `executeOrQuit(prefix = "")` prints `prefix & $err` to stderr and exits with `exitCode(err)`; if an int handler returned a non-zero code, it exits with that code.
+- Exit codes: `err.code` when set (`newCliError("unknown preset", 3)`, or assign `code` on your own `CliError` subtype); otherwise 2 for usage errors (`ParsingFlagError`, `MissingFlagError`, `UnknownCommandError`, `ArgCountError`) and 1 for everything else.
+- A run handler may return `int`: `setRun(proc(args: seq[string]): int = 0)` (or an `int` result in `defineCommand`). Read it with `executeCode` / `tryExecuteCode`; `execute` discards it.
+- A `ValueError` raised by your own `fromString` becomes a `ParsingFlagError` for that flag.
 
 ### Hook order
 
@@ -134,7 +137,7 @@ For `app mid leaf` the hooks run in this order:
 4. `setPostRun` of `leaf`.
 5. `setPersistentPostRun` of the ancestors, nearest first: `mid`, then `app`.
 
-Steps 4-5 run in a `finally`: they also run when `setRun` raises. When a pre-hook raises, neither `setRun` nor the post-hooks run.
+Steps 4-5 also run when `setRun` raises. Every post-hook runs even if an earlier one raised; the error of `setRun` is the one reported, and without it, the first post-hook error. When a pre-hook raises, neither `setRun` nor the post-hooks run.
 
 ### Flag variable lifetime
 
@@ -176,7 +179,8 @@ nimbra/
 │   ├── test_examples.nim   # Builds and runs the examples as processes
 │   ├── test_readme.nim     # Every nim block of this README must compile
 │   ├── test_interspersed.nim  # Flags anywhere, command lookup, unknown command
-│   └── test_list_sep.nim   # List separator, explicit empty string
+│   ├── test_list_sep.nim   # List separator, explicit empty string
+│   └── test_exit_codes.nim # Exit codes, int handlers, post hook errors (+ exit_demo_app.nim fixture)
 ├── examples/               # Example applications
 │   └── simple_calc/        # Simple calculator CLI example
 ├── nimbra.nimble           # Nimble package manifest
@@ -191,7 +195,7 @@ nimbra/
 | `commands/command.nim` | **Command engine**: `Command` ref object, `Parsed` result, `newCommand`, `add`, `addFlag` (3 overloads: scalar, `seq[T]`, `Option[T]`), `parse`, `execute`, `tryExecute`, `executeOrQuit`, hook setters (`setRun`, `setPreRun`, `setPostRun`, `setPersistentPreRun`, `setPersistentPostRun`), hook execution chain. |
 | `commands/flag.nim` | **Flag storage**: `Flag` object, `FlagSet` with `seq[Flag]` + `byLong`/`byShort` index tables, `add`/`checkAdd`/`findLong`/`findShort`, `persistentFlags` extraction for inheritance. |
 | `commands/arg_limits.nim` | **ArgLimit**: `min`/`max` bounds, constructors (`noArgs`, `exact`, `atLeast`, `atMost`, `between`), `holds` validator. |
-| `exceptions.nim` | **Error hierarchy**: `CliError` (base), `ParsingFlagError` (flag + raw), `MissingFlagError` (flag), `CliSettingError` (flag), `UnknownCommandError` (word/command/available), `ArgCountError` (got/min/max), constructors, `$` formatter, `gracefulHandle`, `toCliError` for Result interop. |
+| `exceptions.nim` | **Error hierarchy**: `CliError` (base), `ParsingFlagError` (flag + raw), `MissingFlagError` (flag), `CliSettingError` (flag), `UnknownCommandError` (word/command/available), `ArgCountError` (got/min/max), constructors, `$` formatter, `exitCode`, `gracefulHandle`, `toCliError` for Result interop. |
 | `stdconv.nim` | **Built-in parsers**: `CliValue` concept (`fromString(typedesc[T], string)`), `argHint` for help, `fromString` overloads for `int`, `uint`, `float`, `char`, `string`, `bool`, enums, `IpAddress`. |
 | `pathutils.nim` | **Path flag types**: distinct `FreePath` (parent dir exists, path does not), `DirPath`, `FilePath`, `SymPath`; `fromString` resolves a relative path against the current directory and checks it once, at input time; `toPath`, `$`. |
 | `definecmd.nim` | **Cligen-like macro**: `defineCommand` macro transforms a procedure signature into command construction (`newCommand` + `addFlag` + `setRun`). Supports `short`/`help` pragmas, scalar/`seq`/`Option` parameters, `Result[void, E]` return for error handling. |
@@ -317,7 +321,10 @@ HELLO, Ann
 
 - `execute` кидает наследника `CliError`, ничего не печатает и не завершает процесс.
 - `tryExecute` возвращает `Result[void, ref CliError]`; прочие исключения не перехватываются.
-- `executeOrQuit` печатает `$err` в stderr и выходит с кодом 1.
+- `executeOrQuit(prefix = "")` печатает `prefix & $err` в stderr и выходит с `exitCode(err)`; если int-обработчик вернул не 0, выходит с этим кодом.
+- Коды выхода: `err.code`, если задан (`newCliError("unknown preset", 3)` или присвоить `code` у своего наследника `CliError`); иначе 2 для ошибок использования (`ParsingFlagError`, `MissingFlagError`, `UnknownCommandError`, `ArgCountError`) и 1 для остальных.
+- Обработчик run может возвращать `int`: `setRun(proc(args: seq[string]): int = 0)` (или `int` в `defineCommand`). Код читают `executeCode` / `tryExecuteCode`; `execute` его отбрасывает.
+- `ValueError` из вашего `fromString` превращается в `ParsingFlagError` этого флага.
 
 ### Порядок хуков
 
@@ -329,7 +336,7 @@ HELLO, Ann
 4. `setPostRun` команды `leaf`.
 5. `setPersistentPostRun` предков от ближайшего: `mid`, затем `app`.
 
-Шаги 4-5 выполняются в `finally`: и тогда, когда `setRun` кинул исключение. Если исключение кинул pre-хук, ни `setRun`, ни post-хуки не вызываются.
+Шаги 4-5 выполняются и тогда, когда `setRun` кинул исключение. Все post-хуки идут, даже если предыдущий кинул ошибку; наружу выходит ошибка `setRun`, а без неё — первая ошибка post-хука. Если исключение кинул pre-хук, ни `setRun`, ни post-хуки не вызываются.
 
 ### Время жизни переменных флагов
 
@@ -371,7 +378,8 @@ nimbra/
 │   ├── test_examples.nim   # Сборка и запуск примеров как процессов
 │   ├── test_readme.nim     # Каждый nim-блок этого README обязан компилироваться
 │   ├── test_interspersed.nim  # Флаги где угодно, поиск команды, неизвестная команда
-│   └── test_list_sep.nim   # Разделитель списка, явная пустая строка
+│   ├── test_list_sep.nim   # Разделитель списка, явная пустая строка
+│   └── test_exit_codes.nim # Коды выхода, int-обработчики, ошибки post-хуков (+ фикстура exit_demo_app.nim)
 ├── examples/               # Примеры приложений
 │   └── simple_calc/        # Пример простого калькулятора CLI
 ├── nimbra.nimble           # Манифест пакета Nimble
@@ -386,7 +394,7 @@ nimbra/
 | `commands/command.nim` | **Движок команд**: `Command` (ref object), `Parsed`, `newCommand`, `add`, `addFlag` (3 перегрузки: скаляр, `seq[T]`, `Option[T]`), `parse`, `execute`, `tryExecute`, `executeOrQuit`, сеттеры хуков (`setRun`, `setPreRun`, `setPostRun`, `setPersistentPreRun`, `setPersistentPostRun`), цепочка выполнения хуков. |
 | `commands/flag.nim` | **Хранилище флагов**: объект `Flag`, `FlagSet` с `seq[Flag]` + индексные таблицы `byLong`/`byShort`, `add`/`checkAdd`/`findLong`/`findShort`, `persistentFlags` для наследования. |
 | `commands/arg_limits.nim` | **ArgLimit**: границы `min`/`max`, конструкторы (`noArgs`, `exact`, `atLeast`, `atMost`, `between`), валидатор `holds`. |
-| `exceptions.nim` | **Иерархия ошибок**: `CliError` (база), `ParsingFlagError` (флаг + raw), `MissingFlagError` (флаг), `CliSettingError` (флаг), `UnknownCommandError` (word/command/available), `ArgCountError` (got/min/max), конструкторы, форматтер `$`, `gracefulHandle`, `toCliError` для работы с Result. |
+| `exceptions.nim` | **Иерархия ошибок**: `CliError` (база), `ParsingFlagError` (флаг + raw), `MissingFlagError` (флаг), `CliSettingError` (флаг), `UnknownCommandError` (word/command/available), `ArgCountError` (got/min/max), конструкторы, форматтер `$`, `exitCode`, `gracefulHandle`, `toCliError` для работы с Result. |
 | `stdconv.nim` | **Встроенные парсеры**: концепт `CliValue` (`fromString(typedesc[T], string)`), `argHint` для help, перегрузки `fromString` для `int`, `uint`, `float`, `char`, `string`, `bool`, перечисления, `IpAddress`. |
 | `pathutils.nim` | **Типы путей для флагов**: distinct `FreePath` (родитель существует, сам путь — нет), `DirPath`, `FilePath`, `SymPath`; `fromString` разрешает относительный путь от текущего каталога и проверяет его один раз, при вводе; `toPath`, `$`. |
 | `definecmd.nim` | **Макрос в стиле cligen**: `defineCommand` превращает сигнатуру процедуры в построение команды (`newCommand` + `addFlag` + `setRun`). Поддерживает прагмы `short`/`help`, параметры-скаляры/`seq`/`Option`, возврат `Result[void, E]` для обработки ошибок. |
