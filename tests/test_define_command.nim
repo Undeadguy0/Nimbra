@@ -70,6 +70,11 @@ proc tagsDef(tags: seq[string] = @["d"]) =
 proc nums(ns: seq[int]) =
   numsSeen = ns
 
+var onlySeen: seq[string]
+
+proc onlyParts(only {.sep: ','.}: seq[string]) =
+  onlySeen = only
+
 suite "defineCommand":
   test "flags, default, bool and required name":
     defineCommand(greet, app)
@@ -122,7 +127,7 @@ suite "defineCommand":
     check hostCmd.tryExecute(@[]).isOk
     check hostSeen == "localhost"
     check hostCmd.tryExecute(@["--host="]).isOk
-    check hostSeen == "localhost"
+    check hostSeen == ""
     check hostCmd.tryExecute(@["--host", "box"]).isOk
     check hostSeen == "box"
 
@@ -145,3 +150,8 @@ suite "defineCommand":
     check midLeft == "L"
     check midArgs == @["p"]
     check midRight == 3
+
+  test "sep pragma splits a list flag":
+    defineCommand(onlyParts, onlyCmd)
+    check onlyCmd.tryExecute(@["--only", "a,b", "--only=c"]).isOk
+    check onlySeen == @["a", "b", "c"]

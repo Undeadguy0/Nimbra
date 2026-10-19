@@ -223,9 +223,15 @@ proc addFlag*[T: CliValue](
     # See "Variable lifetime" in the module doc.
     slot = addr output
   let onValue = proc(raw: string) =
-    if raw.len == 0 and fallback.isSome:
+    # Пустая строка — законное значение строкового флага, не «нет значения».
+    # An empty string is a real value of a string flag, not "no value".
+    when T is string:
+      const emptyIsValue = true
+    else:
+      const emptyIsValue = false
+    if raw.len == 0 and fallback.isSome and not emptyIsValue:
       slot[] = fallback.get
-    elif raw.len == 0:
+    elif raw.len == 0 and not emptyIsValue:
       when T is bool:
         slot[] = false
       else:
@@ -270,21 +276,42 @@ proc addFlag*[T: CliValue](
     short: Option[char] = none(char),
     help: string = "",
     persistent = false,
+    sep: Option[char] = none(char),
 ) =
-  ## Повтор флага дописывает один элемент. Пустой raw — raw элемента,
-  ## не повод подставить дефолт всего списка.
-  ## Each repeat appends one element. An empty raw is that element's raw,
-  ## not a reason to substitute the default of the whole list.
+  ## Повтор флага дописывает элементы. Без `sep` каждое упоминание — один
+  ## элемент, и пустой raw — raw элемента, не повод подставить дефолт списка.
+  ## С `sep` значение режется по разделителю (`--only a,b`), пустые
+  ## сегменты пропускаются, пустое значение не добавляет ничего. В
+  ## `ParsingFlagError.raw` попадает сегмент, а не весь токен.
+  ## Each repeat appends elements. Without `sep` each mention is one element,
+  ## and an empty raw is that element's raw, not a reason to substitute the
+  ## list default. With `sep` the value is split on the separator
+  ## (`--only a,b`), empty segments are skipped, an empty value adds nothing.
+  ## `ParsingFlagError.raw` carries the segment, not the whole token.
   guardPolicy(name, required, default.isSome, false)
   let
     canonical = name
     fallback = default
     must = required
     slot = addr output
+  let splitter = sep
   let onValue = proc(raw: string) =
-    stamp(canonical, raw):
-      mixin fromString
-      slot[].add fromString(T, raw)
+    if splitter.isNone:
+      stamp(canonical, raw):
+        mixin fromString
+        slot[].add fromString(T, raw)
+    else:
+      var parsed: seq[T]
+      for segment in raw.split(splitter.get):
+        if segment.len == 0:
+          continue
+        # Имя `raw` нужно шаблону `stamp`: он пишет `e.raw = raw`.
+        # The template `stamp` needs the name `raw`: it writes `e.raw = raw`.
+        let raw = segment
+        stamp(canonical, raw):
+          mixin fromString
+          parsed.add fromString(T, raw)
+      slot[].add parsed
   let onAbsent = proc() =
     if fallback.isSome:
       slot[] = fallback.get
@@ -325,7 +352,11 @@ proc addFlag*[T: CliValue](
     must = required
     slot = addr output
   let onValue = proc(raw: string) =
-    if raw.len == 0 and fallback.isSome:
+    when T is string:
+      const emptyIsValue = true
+    else:
+      const emptyIsValue = false
+    if raw.len == 0 and fallback.isSome and not emptyIsValue:
       slot[] = some(fallback.get)
     else:
       stamp(canonical, raw):

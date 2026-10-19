@@ -184,7 +184,7 @@ suite "value policy":
     check root.tryExecute(@[]).isOk
     check host == some("localhost")
     check root.tryExecute(@["--host="]).isOk
-    check host == some("localhost")
+    check host == some("")
     check root.tryExecute(@["--host", "box"]).isOk
     check host == some("box")
 

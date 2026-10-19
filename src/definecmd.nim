@@ -25,6 +25,10 @@ template short*(value: char) {.pragma.}
   ## Короткое имя флага у параметра `defineCommand`.
   ## Short flag name on a `defineCommand` parameter.
 
+template sep*(value: char) {.pragma.}
+  ## Разделитель значений у параметра `seq[T]`: `--only a,b`.
+  ## Value separator on a `seq[T]` parameter: `--only a,b`.
+
 template help*(text: string) {.pragma.}
   ## Текст help у параметра или у самой процедуры `defineCommand`.
   ## Help text on a parameter or on the `defineCommand` procedure itself.
@@ -34,6 +38,7 @@ type ParamInfo = object
   typ: NimNode
   defaultNode: NimNode
   shortNode: NimNode
+  sepNode: NimNode
   help: string
   positional: bool
   isBool: bool
@@ -79,6 +84,8 @@ proc applyPragma(p: NimNode, info: var ParamInfo) =
       return
   if key.eqIdent("short"):
     info.shortNode = val
+  elif key.eqIdent("sep"):
+    info.sepNode = val
   elif key.eqIdent("help") and val.kind in {nnkStrLit, nnkTripleStrLit, nnkRStrLit}:
     info.help = val.strVal
 
@@ -104,7 +111,7 @@ proc collectParams(params: NimNode): seq[ParamInfo] =
     let typ = id[^2]
     let defNode = id[^1]
     for n in 0 ..< id.len - 2:
-      var info = ParamInfo(typ: typ, defaultNode: defNode, shortNode: newEmptyNode())
+      var info = ParamInfo(typ: typ, defaultNode: defNode, shortNode: newEmptyNode(), sepNode: newEmptyNode())
       takeName(id[n], info)
       info.positional = isPositionalArgs(info.name, typ)
       info.isBool = isBoolType(typ)
@@ -207,6 +214,8 @@ macro defineCommand*(fn: typed, dest: untyped): untyped =
       call.add named("required", newLit(true))
     if p.shortNode.kind != nnkEmpty:
       call.add named("short", newCall(someSym, p.shortNode.copyNimTree()))
+    if p.sepNode.kind != nnkEmpty:
+      call.add named("sep", newCall(someSym, p.sepNode.copyNimTree()))
     if p.help.len > 0:
       call.add named("help", newLit(p.help))
     result.add call
