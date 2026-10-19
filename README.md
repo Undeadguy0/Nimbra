@@ -68,10 +68,12 @@ when isMainModule:
 ```
 
 ```
-$ app serve -v -p 9000
+$ app -v serve -p 9000
 serving on 9000 (verbose)
-$ app s --port=1
+$ app s cfg.toml --port=1
 serving on 1
+$ app bogus
+unknown command 'bogus' for 'app'; available: serve
 ```
 
 ### Cligen-like: `defineCommand`
@@ -102,6 +104,17 @@ $ greet --name Ann --times 2 --loud
 HELLO, Ann
 HELLO, Ann
 ```
+
+### Parsing rules
+
+- Commands come first: `app mid leaf`. Flags known to the command reached so far may stand between the command names, so a persistent root flag works before the subcommand: `app -v serve`. A local (non-persistent) parent flag is not accepted after descending.
+- Command lookup stops at the first word that is not a subcommand; from there on everything that is not a flag is a positional.
+- Flags of the selected command may appear anywhere: before, after and between positionals (`set pepel --dry-run`).
+- Long flags: `--name value`, `--name=value`; a bool flag takes a value only with `=` (`--verbose=false`).
+- Short flags: `-p 80`, `-p80`, `-p=80`, clusters `-vx`, `-vp80`; a bool takes `-v=false`.
+- `--` ends flags: everything after it is positional.
+- `-4`, `-1.5`, `-.5`, `-1e3` are positionals unless the command has that digit as a short flag. A lone `-` is a positional.
+- A command that has subcommands but no `setRun` rejects positionals with `UnknownCommandError` (word, command, available subcommands).
 
 ### Errors
 
@@ -146,7 +159,7 @@ nimbra/
 │   │   ├── command.nim     # Command tree, flag registration, argv parsing, hook execution
 │   │   ├── flag.nim        # FlagSet: storage, lookup, and invocation of flags
 │   │   └── arg_limits.nim  # ArgLimit type and constructors (noArgs, exact, atLeast, atMost, between)
-│   ├── exceptions.nim      # CLI error hierarchy (CliError, ParsingFlagError, MissingFlagError, CliSettingError, ArgCountError)
+│   ├── exceptions.nim      # CLI error hierarchy (CliError, ParsingFlagError, MissingFlagError, CliSettingError, UnknownCommandError, ArgCountError)
 │   ├── stdconv.nim         # Built-in fromString parsers for CliValue concept (int, uint, float, char, string, bool, enum, IpAddress)
 │   ├── pathutils.nim       # Path flag types checked at input time (FreePath, DirPath, FilePath, SymPath)
 │   └── definecmd.nim       # Cligen-like macro: defineCommand macro for declarative command definition
@@ -159,7 +172,8 @@ nimbra/
 │   ├── test_flags.nim      # Flag registration and parsing tests
 │   ├── test_pathutils.nim  # Path type tests
 │   ├── test_examples.nim   # Builds and runs the examples as processes
-│   └── test_readme.nim     # Every nim block of this README must compile
+│   ├── test_readme.nim     # Every nim block of this README must compile
+│   └── test_interspersed.nim  # Flags anywhere, command lookup, unknown command
 ├── examples/               # Example applications
 │   └── simple_calc/        # Simple calculator CLI example
 ├── nimbra.nimble           # Nimble package manifest
@@ -174,7 +188,7 @@ nimbra/
 | `commands/command.nim` | **Command engine**: `Command` ref object, `Parsed` result, `newCommand`, `add`, `addFlag` (3 overloads: scalar, `seq[T]`, `Option[T]`), `parse`, `execute`, `tryExecute`, `executeOrQuit`, hook setters (`setRun`, `setPreRun`, `setPostRun`, `setPersistentPreRun`, `setPersistentPostRun`), hook execution chain. |
 | `commands/flag.nim` | **Flag storage**: `Flag` object, `FlagSet` with `seq[Flag]` + `byLong`/`byShort` index tables, `add`/`checkAdd`/`findLong`/`findShort`, `persistentFlags` extraction for inheritance. |
 | `commands/arg_limits.nim` | **ArgLimit**: `min`/`max` bounds, constructors (`noArgs`, `exact`, `atLeast`, `atMost`, `between`), `holds` validator. |
-| `exceptions.nim` | **Error hierarchy**: `CliError` (base), `ParsingFlagError` (flag + raw), `MissingFlagError` (flag), `CliSettingError` (flag), `ArgCountError` (got/min/max), constructors, `$` formatter, `gracefulHandle`, `toCliError` for Result interop. |
+| `exceptions.nim` | **Error hierarchy**: `CliError` (base), `ParsingFlagError` (flag + raw), `MissingFlagError` (flag), `CliSettingError` (flag), `UnknownCommandError` (word/command/available), `ArgCountError` (got/min/max), constructors, `$` formatter, `gracefulHandle`, `toCliError` for Result interop. |
 | `stdconv.nim` | **Built-in parsers**: `CliValue` concept (`fromString(typedesc[T], string)`), `argHint` for help, `fromString` overloads for `int`, `uint`, `float`, `char`, `string`, `bool`, enums, `IpAddress`. |
 | `pathutils.nim` | **Path flag types**: distinct `FreePath` (parent dir exists, path does not), `DirPath`, `FilePath`, `SymPath`; `fromString` resolves a relative path against the current directory and checks it once, at input time; `toPath`, `$`. |
 | `definecmd.nim` | **Cligen-like macro**: `defineCommand` macro transforms a procedure signature into command construction (`newCommand` + `addFlag` + `setRun`). Supports `short`/`help` pragmas, scalar/`seq`/`Option` parameters, `Result[void, E]` return for error handling. |
@@ -246,10 +260,12 @@ when isMainModule:
 ```
 
 ```
-$ app serve -v -p 9000
+$ app -v serve -p 9000
 serving on 9000 (verbose)
-$ app s --port=1
+$ app s cfg.toml --port=1
 serving on 1
+$ app bogus
+unknown command 'bogus' for 'app'; available: serve
 ```
 
 ### В стиле Cligen: `defineCommand`
@@ -280,6 +296,17 @@ $ greet --name Ann --times 2 --loud
 HELLO, Ann
 HELLO, Ann
 ```
+
+### Правила разбора
+
+- Сначала команды: `app mid leaf`. Между именами команд могут стоять флаги, известные уже найденной команде, поэтому persistent-флаг корня работает до подкоманды: `app -v serve`. Локальный (не persistent) флаг родителя после спуска не принимается.
+- Поиск команды останавливается на первом слове, которое не подкоманда; дальше всё, что не флаг, — позиционные.
+- Флаги выбранной команды можно писать где угодно: до, после и между позиционными (`set pepel --dry-run`).
+- Длинные флаги: `--name value`, `--name=value`; bool-флаг берёт значение только через `=` (`--verbose=false`).
+- Короткие флаги: `-p 80`, `-p80`, `-p=80`, кластеры `-vx`, `-vp80`; bool принимает `-v=false`.
+- `--` заканчивает флаги: всё после него — позиционные.
+- `-4`, `-1.5`, `-.5`, `-1e3` — позиционные, если у команды нет такого короткого флага-цифры. Одиночный `-` — позиционный.
+- Команда, у которой есть подкоманды, но нет `setRun`, отвергает позиционные ошибкой `UnknownCommandError` (слово, команда, доступные подкоманды).
 
 ### Ошибки
 
@@ -324,7 +351,7 @@ nimbra/
 │   │   ├── command.nim     # Дерево команд, регистрация флагов, разбор argv, запуск хуков
 │   │   ├── flag.nim        # FlagSet: хранение, поиск и вызов флагов
 │   │   └── arg_limits.nim  # Тип ArgLimit и конструкторы (noArgs, exact, atLeast, atMost, between)
-│   ├── exceptions.nim      # Иерархия ошибок CLI (CliError, ParsingFlagError, MissingFlagError, CliSettingError, ArgCountError)
+│   ├── exceptions.nim      # Иерархия ошибок CLI (CliError, ParsingFlagError, MissingFlagError, CliSettingError, UnknownCommandError, ArgCountError)
 │   ├── stdconv.nim         # Встроенные парсеры fromString для концепта CliValue (int, uint, float, char, string, bool, enum, IpAddress)
 │   ├── pathutils.nim       # Типы путей для флагов, проверяемые при вводе (FreePath, DirPath, FilePath, SymPath)
 │   └── definecmd.nim       # Макрос в стиле cligen: defineCommand для декларативного определения команд
@@ -337,7 +364,8 @@ nimbra/
 │   ├── test_flags.nim      # Тесты регистрации и разбора флагов
 │   ├── test_pathutils.nim  # Тесты типов путей
 │   ├── test_examples.nim   # Сборка и запуск примеров как процессов
-│   └── test_readme.nim     # Каждый nim-блок этого README обязан компилироваться
+│   ├── test_readme.nim     # Каждый nim-блок этого README обязан компилироваться
+│   └── test_interspersed.nim  # Флаги где угодно, поиск команды, неизвестная команда
 ├── examples/               # Примеры приложений
 │   └── simple_calc/        # Пример простого калькулятора CLI
 ├── nimbra.nimble           # Манифест пакета Nimble
@@ -352,7 +380,7 @@ nimbra/
 | `commands/command.nim` | **Движок команд**: `Command` (ref object), `Parsed`, `newCommand`, `add`, `addFlag` (3 перегрузки: скаляр, `seq[T]`, `Option[T]`), `parse`, `execute`, `tryExecute`, `executeOrQuit`, сеттеры хуков (`setRun`, `setPreRun`, `setPostRun`, `setPersistentPreRun`, `setPersistentPostRun`), цепочка выполнения хуков. |
 | `commands/flag.nim` | **Хранилище флагов**: объект `Flag`, `FlagSet` с `seq[Flag]` + индексные таблицы `byLong`/`byShort`, `add`/`checkAdd`/`findLong`/`findShort`, `persistentFlags` для наследования. |
 | `commands/arg_limits.nim` | **ArgLimit**: границы `min`/`max`, конструкторы (`noArgs`, `exact`, `atLeast`, `atMost`, `between`), валидатор `holds`. |
-| `exceptions.nim` | **Иерархия ошибок**: `CliError` (база), `ParsingFlagError` (флаг + raw), `MissingFlagError` (флаг), `CliSettingError` (флаг), `ArgCountError` (got/min/max), конструкторы, форматтер `$`, `gracefulHandle`, `toCliError` для работы с Result. |
+| `exceptions.nim` | **Иерархия ошибок**: `CliError` (база), `ParsingFlagError` (флаг + raw), `MissingFlagError` (флаг), `CliSettingError` (флаг), `UnknownCommandError` (word/command/available), `ArgCountError` (got/min/max), конструкторы, форматтер `$`, `gracefulHandle`, `toCliError` для работы с Result. |
 | `stdconv.nim` | **Встроенные парсеры**: концепт `CliValue` (`fromString(typedesc[T], string)`), `argHint` для help, перегрузки `fromString` для `int`, `uint`, `float`, `char`, `string`, `bool`, перечисления, `IpAddress`. |
 | `pathutils.nim` | **Типы путей для флагов**: distinct `FreePath` (родитель существует, сам путь — нет), `DirPath`, `FilePath`, `SymPath`; `fromString` разрешает относительный путь от текущего каталога и проверяет его один раз, при вводе; `toPath`, `$`. |
 | `definecmd.nim` | **Макрос в стиле cligen**: `defineCommand` превращает сигнатуру процедуры в построение команды (`newCommand` + `addFlag` + `setRun`). Поддерживает прагмы `short`/`help`, параметры-скаляры/`seq`/`Option`, возврат `Result[void, E]` для обработки ошибок. |
