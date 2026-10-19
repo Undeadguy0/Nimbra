@@ -45,6 +45,8 @@ import flag
 
 type
   Handler* = proc(args: seq[string]) {.closure.}
+  CodeHandler* = proc(args: seq[string]): int {.closure.}
+    ## Обработчик run, возвращающий код выхода. / A run handler that returns an exit code.
   Command* = ref object
     ## Узел дерева. Дети — seq, порядок нужен для help и поиска.
     ## A tree node. Children are a seq; order is needed for help and lookup.
@@ -53,6 +55,7 @@ type
     aliases: seq[string]
     argLimit*: ArgLimit
     runImpl: Option[Handler]
+    runCodeImpl: Option[CodeHandler]
     preRunImpl: Option[Handler]
     postRunImpl: Option[Handler]
     persPreRunImpl: Option[Handler]
@@ -88,6 +91,8 @@ proc newCommand*(name: string, help = "", aliases: seq[string] = @[]): Command =
 template declareHook(setName, field: untyped) =
   proc setName*(c: Command, body: Handler) =
     c.field = some(body)
+    when astToStr(field) == "runImpl":
+      c.runCodeImpl = none(CodeHandler)
 
   proc setName*[E](c: Command, body: proc(args: seq[string]): Result[void, E]) =
     ## Ошибка Result становится `raise` до записи в узел.
@@ -101,8 +106,20 @@ template declareHook(setName, field: untyped) =
           mixin toCliError
           raise r.error.toCliError()
     )
+    when astToStr(field) == "runImpl":
+      c.runCodeImpl = none(CodeHandler)
 
 declareHook(setRun, runImpl)
+
+proc setRun*(c: Command, body: CodeHandler) =
+  ## Обработчик возвращает код выхода. Заменяет обработчик без кода.
+  ## Код доставляют `executeCode` / `tryExecuteCode` / `executeOrQuit`;
+  ## `execute` его отбрасывает.
+  ## The handler returns the exit code. Replaces a handler without a code.
+  ## `executeCode` / `tryExecuteCode` / `executeOrQuit` deliver the code;
+  ## `execute` discards it.
+  c.runCodeImpl = some(body)
+  c.runImpl = none(Handler)
 declareHook(setPreRun, preRunImpl)
 declareHook(setPostRun, postRunImpl)
 declareHook(setPersistentPreRun, persPreRunImpl)
@@ -191,6 +208,12 @@ template stamp(name, raw: string, body: untyped) =
     e.flag = name
     e.raw = raw
     raise e
+  except ValueError as e:
+    # Пользовательский `fromString` может кинуть ValueError: это тоже
+    # плохое значение флага, а не сбой программы.
+    # A user `fromString` may raise ValueError: that is a bad flag value too,
+    # not a program failure.
+    raise newParsingFlagError(e.msg, raw, name)
 
 proc addFlag*[T: CliValue](
     c: Command,
@@ -626,7 +649,13 @@ proc callHook(slot: Option[Handler], args: seq[string]) =
   if slot.isSome:
     slot.get()(args)
 
-proc runHooks(parsed: Parsed) =
+proc runHooks(parsed: Parsed): int =
+  ## Ошибка pre-хука обрывает всё. Post-хуки идут всегда после run; все
+  ## выполняются, наружу выходит ошибка run, а если её нет — первая
+  ## ошибка post-хука.
+  ## A pre-hook error aborts everything. Post hooks always run after run;
+  ## all of them run, and the run error is raised, or, without one, the
+  ## first post-hook error.
   let
     path = parsed.path
     args = parsed.args
@@ -634,22 +663,52 @@ proc runHooks(parsed: Parsed) =
   for anc in path[0 ..< ^1]:
     callHook(anc.persPreRunImpl, args)
   callHook(cmd.preRunImpl, args)
+  var failure: ref Exception = nil
   try:
-    callHook(cmd.runImpl, args)
-  finally:
-    callHook(cmd.postRunImpl, args)
-    for i in countdown(path.len - 2, 0):
-      callHook(path[i].persPostRunImpl, args)
+    if cmd.runCodeImpl.isSome:
+      result = cmd.runCodeImpl.get()(args)
+    else:
+      callHook(cmd.runImpl, args)
+  except CatchableError as e:
+    failure = e
+  var posts: seq[Option[Handler]] = @[cmd.postRunImpl]
+  for i in countdown(path.len - 2, 0):
+    posts.add path[i].persPostRunImpl
+  for hook in posts:
+    try:
+      callHook(hook, args)
+    except CatchableError as e:
+      if failure.isNil:
+        failure = e
+  if not failure.isNil:
+    raise failure
+
+proc executeCode*(root: Command, tokens: seq[string] = commandLineParams()): int =
+  ## Как `execute`, но возвращает код выхода int-обработчика (0, если
+  ## обработчик без кода или его нет).
+  ## Like `execute`, but returns the exit code of an int handler (0 when the
+  ## handler has no code or there is none).
+  let parsed = parse(root, tokens)
+  checkCommand(parsed.path[^1], parsed.args)
+  checkArgs(parsed.path[^1], parsed.args)
+  runHooks(parsed)
 
 proc execute*(root: Command, tokens: seq[string] = commandLineParams()) =
   ## Разбор, неизвестная команда, лимит, хуки. Ошибку CLI не печатает и
   ## процесс не завершает.
   ## Parse, unknown command, limit, hooks. Does not print a CLI error and
   ## does not exit the process.
-  let parsed = parse(root, tokens)
-  checkCommand(parsed.path[^1], parsed.args)
-  checkArgs(parsed.path[^1], parsed.args)
-  runHooks(parsed)
+  discard executeCode(root, tokens)
+
+proc tryExecuteCode*(
+    root: Command, tokens: seq[string] = commandLineParams()
+): Result[int, ref CliError] =
+  ## `tryExecute` с кодом выхода обработчика.
+  ## `tryExecute` with the handler's exit code.
+  try:
+    ok(executeCode(root, tokens))
+  except CliError as e:
+    err(e)
 
 proc tryExecute*(
     root: Command, tokens: seq[string] = commandLineParams()
@@ -662,10 +721,21 @@ proc tryExecute*(
   except CliError as e:
     err(e)
 
-proc executeOrQuit*(root: Command, tokens: seq[string] = commandLineParams()) =
+proc executeOrQuit*(
+    root: Command, tokens: seq[string] = commandLineParams(), prefix = ""
+) =
   ## Единственная точка `quit`. В тестах не вызывать.
+  ## Ошибка CLI: `prefix` и текст в stderr, выход с `exitCode(err)`
+  ## (ошибки использования — 2, остальные — 1, либо `err.code`).
+  ## Успех: если int-обработчик вернул не 0, выход с этим кодом.
   ## The only `quit`. Do not call it from tests.
+  ## A CLI error: `prefix` and the text on stderr, exit with `exitCode(err)`
+  ## (usage errors 2, others 1, or `err.code`).
+  ## Success: if an int handler returned non-zero, exit with that code.
+  var code = 0
   try:
-    execute(root, tokens)
+    code = executeCode(root, tokens)
   except CliError as e:
-    e.gracefulHandle()
+    e.gracefulHandle(prefix)
+  if code != 0:
+    quit code

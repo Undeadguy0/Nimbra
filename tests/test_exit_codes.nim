@@ -22,6 +22,11 @@ proc fromString(T: typedesc[Level], r: string): Level =
     raise newException(ValueError, "no such level")
   Level(r.len)
 
+type Boom = object
+
+proc fromString(T: typedesc[Boom], r: string): Boom =
+  raise newException(IOError, "disk")
+
 suite "exit code on errors":
   test "defaults: usage errors 2, others 1":
     check exitCode(newParsingFlagError("x")) == 2
@@ -126,9 +131,6 @@ suite "ValueError from user parsers":
     check (ref ParsingFlagError)(r.error).raw == "bad"
 
   test "other exceptions stay failures":
-    type Boom = object of CatchableError
-    proc fromString(T: typedesc[Boom], r: string): Boom =
-      raise newException(IOError, "disk")
     var b: Boom
     let root = newCommand("app")
     root.addFlag("b", b)

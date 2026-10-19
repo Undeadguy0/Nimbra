@@ -6,6 +6,7 @@
 ## Дефолт параметра `Option[T]` уже имеет тип `Option` и уходит в `addFlag`
 ## как есть. У скаляра и `seq` он оборачивается в `some`.
 ## Возврат `Result[void, E]` садится в result-перегрузку `setRun`.
+## Возврат `int` становится кодом выхода (`executeCode`, `executeOrQuit`).
 ## Любой другой возврат вызывается из обычного обработчика.
 ##
 ## Cligen-style sugar: a procedure signature becomes the same command written by hand.
@@ -16,6 +17,7 @@
 ## A default on an `Option[T]` parameter is already an `Option` and is passed
 ## to `addFlag` as is. A scalar or `seq` default is wrapped in `some`.
 ## A `Result[void, E]` return uses the Result overload of `setRun`.
+## An `int` return becomes the exit code (`executeCode`, `executeOrQuit`).
 ## Any other return is called from an ordinary handler.
 
 import std/macros
@@ -238,6 +240,12 @@ macro defineCommand*(fn: typed, dest: untyped): untyped =
     result.add quote do:
       `dest`.`setRunId`(
         proc(`argsSym`: seq[string]) =
+          `invocation`
+      )
+  elif ret.eqIdent("int"):
+    result.add quote do:
+      `dest`.`setRunId`(
+        proc(`argsSym`: seq[string]): int =
           `invocation`
       )
   else:

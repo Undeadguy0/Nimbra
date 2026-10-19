@@ -12,6 +12,9 @@ import std/options
 
 type
   CliError* = object of CatchableError
+    code*: int
+      ## Код выхода процесса. 0 — «не задан»: см. `exitCode`.
+      ## Process exit code. 0 means "not set": see `exitCode`.
   ParsingFlagError* = object of CliError
     ## Значение в argv было, но `fromString` его не принял.
     ## A value was present in argv, but `fromString` rejected it.
@@ -55,6 +58,12 @@ type
     got*: uint
     min*: uint
     max*: Option[uint]
+
+proc newCliError*(msg: string, code = 0): ref CliError =
+  ## Ошибка приложения со своим кодом выхода (`code` > 0).
+  ## An application error with its own exit code (`code` > 0).
+  result = newException(CliError, msg)
+  result.code = code
 
 proc newParsingFlagError*(
     msg: string, raw = "", flag = "", isShort = false
@@ -139,8 +148,23 @@ proc `$`*(err: ref CliError): string =
   else:
     result = err.msg
 
-proc gracefulHandle*(err: ref CliError) {.noreturn.} =
+proc exitCode*(err: ref CliError): int =
+  ## Явный `code`, иначе по виду ошибки: ошибки использования
+  ## (флаг, команда, число аргументов) — 2, остальные — 1.
+  ## The explicit `code`, otherwise by kind: usage errors (flag, command,
+  ## argument count) are 2, everything else is 1.
+  if err.code != 0:
+    err.code
+  elif err of ParsingFlagError or err of MissingFlagError or
+      err of UnknownCommandError or err of ArgCountError:
+    2
+  else:
+    1
+
+proc gracefulHandle*(err: ref CliError, prefix = "") {.noreturn.} =
   ## Граница процесса. Кроме `executeOrQuit` этот выход никому не нужен.
+  ## Текст — в stderr, перед ним `prefix`; код — `exitCode(err)`.
   ## Process boundary. Nothing but `executeOrQuit` needs this exit.
-  stderr.writeLine $err
-  quit 1
+  ## The text goes to stderr after `prefix`; the code is `exitCode(err)`.
+  stderr.writeLine prefix & $err
+  quit exitCode(err)

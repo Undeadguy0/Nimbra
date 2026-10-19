@@ -134,7 +134,7 @@ suite "hooks":
     check root.tryExecute(@[]).isOk
     check n == 2
 
-  test "post error replaces run error and breaks tail":
+  test "post error does not replace run error and does not break tail":
     var log: seq[string]
     let
       root = newCommand("app")
@@ -149,8 +149,8 @@ suite "hooks":
     root.setPersistentPostRun proc(args: seq[string]) =
       log.add "root-pers-post"
     let failed = root.tryExecute(@["sub"])
-    check failed.error.msg == "from post"
-    check log == @["run", "post"]
+    check failed.error.msg == "from run"
+    check log == @["run", "post", "root-pers-post"]
 
   test "Result on pre and persistent post":
     let root = newCommand("app")
