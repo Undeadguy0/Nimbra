@@ -17,6 +17,11 @@ type
     ## A value was present in argv, but `fromString` rejected it.
     flag*: string
     raw*: string
+    isShort*: bool
+      ## `flag` — однобуквенное короткое имя из argv (`-z`), а не длинное.
+      ## Так бывает у неизвестного короткого флага: длинного имени нет.
+      ## `flag` is a one-letter short name from argv (`-z`), not a long one.
+      ## That happens for an unknown short flag: there is no long name.
 
   MissingFlagError* = object of CliError
     ## Обязательного флага в argv не было. Поля `raw` нет:
@@ -30,6 +35,20 @@ type
     ## Tree setup failed, before launch. `flag` is empty when this is not a flag.
     flag*: string
 
+  UnknownCommandError* = object of CliError
+    ## У выбранной команды есть подкоманды, но нет своего run, а первый
+    ## позиционный не совпал ни с одной из них.
+    ## The selected command has subcommands and no run of its own, and the
+    ## first positional matched none of them.
+    word*: string
+      ## Слово из argv. `name` занят полем `Exception`.
+      ## The word from argv. `name` is taken by an `Exception` field.
+    command*: string
+      ## Имя команды, у которой искали. / Name of the command searched.
+    available*: seq[string]
+      ## Имена подкоманд в порядке регистрации, без алиасов.
+      ## Subcommand names in registration order, without aliases.
+
   ArgCountError* = object of CliError
     ## Число позиционных не попало в `ArgLimit` выбранной команды.
     ## The positional count missed the selected command's `ArgLimit`.
@@ -37,12 +56,15 @@ type
     min*: uint
     max*: Option[uint]
 
-proc newParsingFlagError*(msg: string, raw = "", flag = ""): ref ParsingFlagError =
+proc newParsingFlagError*(
+    msg: string, raw = "", flag = "", isShort = false
+): ref ParsingFlagError =
   ## `flag` обычно дописывает `onValue`: `fromString` имя флага не знает.
   ## `onValue` usually fills `flag`: `fromString` does not know the flag name.
   result = newException(ParsingFlagError, msg)
   result.raw = raw
   result.flag = flag
+  result.isShort = isShort
 
 proc newMissingFlagError*(msg: string, flag: string): ref MissingFlagError =
   result = newException(MissingFlagError, msg)
@@ -51,6 +73,24 @@ proc newMissingFlagError*(msg: string, flag: string): ref MissingFlagError =
 proc newCliSettingError*(msg: string, flag = ""): ref CliSettingError =
   result = newException(CliSettingError, msg)
   result.flag = flag
+
+proc newUnknownCommandError*(
+    name, command: string, available: seq[string]
+): ref UnknownCommandError =
+  var msg = "unknown command '" & name & "'"
+  if command.len > 0:
+    msg.add " for '" & command & "'"
+  if available.len > 0:
+    var names = ""
+    for i, n in available:
+      if i > 0:
+        names.add ", "
+      names.add n
+    msg.add "; available: " & names
+  result = newException(UnknownCommandError, msg)
+  result.word = name
+  result.command = command
+  result.available = available
 
 proc newArgCountError*(
     msg: string, got: uint, min: uint, max: Option[uint]
@@ -82,7 +122,8 @@ proc `$`*(err: ref CliError): string =
   ## also see the fields, but one cast is less confusing when writing them back.
   if err of ParsingFlagError:
     let e = (ref ParsingFlagError)(err)
-    result = "Error parsing flag --" & e.flag & " from '" & e.raw & "': " & e.msg
+    let dashes = if e.isShort: "-" else: "--"
+    result = "Error parsing flag " & dashes & e.flag & " from '" & e.raw & "': " & e.msg
   elif err of MissingFlagError:
     let e = (ref MissingFlagError)(err)
     result = "Missing required flag --" & e.flag & ": " & e.msg

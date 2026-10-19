@@ -166,7 +166,7 @@ suite "unknown command":
     check failed.isErr
     check failed.error of UnknownCommandError
     let e = (ref UnknownCommandError)(failed.error)
-    check e.name == "bogus"
+    check e.word == "bogus"
     check e.command == "theme"
     check e.available == @["list", "current", "set"]
     check "unknown command 'bogus'" in $failed.error
