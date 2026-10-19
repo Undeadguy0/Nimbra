@@ -39,7 +39,7 @@ suite "argv parsing":
     root.addFlag("extra", extra, short = some('x'))
     root.addFlag("port", port, short = some('p'), default = some(1))
     root.addFlag("count", count, required = true)
-    let parsed = root.parse(@["-vx", "-p8080", "--count", "-4", "file", "--nope"])
+    let parsed = root.parse(@["-vx", "-p8080", "--count", "-4", "file", "--", "--nope"])
     check verbose
     check extra
     check port == 8080
@@ -70,13 +70,13 @@ suite "argv parsing":
     check verbose
     check parsed.args == @["-"]
 
-  test "after first positional tail not parsed as flags":
+  test "after first positional flags are still parsed":
     var verbose = false
     let root = newCommand("app")
     root.addFlag("verbose", verbose)
     let parsed = root.parse(@["file", "--verbose"])
-    check verbose == false
-    check parsed.args == @["file", "--verbose"]
+    check verbose
+    check parsed.args == @["file"]
 
   test "limit counted at selected command":
     let
@@ -85,6 +85,9 @@ suite "argv parsing":
     root.argLimit = exact(0)
     sub.argLimit = exact(2)
     root.add sub
+    # Без своего run родитель отверг бы `only` как неизвестную команду.
+    # Without its own run the parent would reject `only` as an unknown command.
+    root.setRun proc(args: seq[string]) = discard
     check root.tryExecute(@["only"]).error of ArgCountError
     let wrong = root.tryExecute(@["sub", "one"])
     check wrong.isErr
@@ -153,7 +156,7 @@ suite "argv parsing":
     check parsed.args == @["--verbose", "-v"]
     check verbose == false
 
-  test "flag interrupts command descent":
+  test "flag does not interrupt command descent":
     var verbose = false
     let
       root = newCommand("app")
@@ -161,9 +164,9 @@ suite "argv parsing":
     root.addFlag("verbose", verbose, persistent = true)
     root.add serve
     let before = root.parse(@["--verbose", "serve"])
-    check before.path.mapIt(it.name) == @["app"]
+    check before.path.mapIt(it.name) == @["app", "serve"]
     check verbose
-    check before.args == @["serve"]
+    check before.args.len == 0
     let between = root.parse(@["serve", "--verbose", "now"])
     check between.path.mapIt(it.name) == @["app", "serve"]
     check verbose
@@ -178,8 +181,8 @@ suite "argv parsing":
     root.addFlag("extra", extra, short = some('x'))
     let word = root.parse(@["--verbose", "false", "--extra"])
     check verbose
-    check extra == false
-    check word.args == @["false", "--extra"]
+    check extra
+    check word.args == @["false"]
     let flags = root.parse(@["--verbose", "--extra"])
     check verbose
     check extra
@@ -215,11 +218,13 @@ suite "argv parsing":
     check verbose
     check extra == false
     check port == 4
-    let stuck = root.tryExecute(@["-p=80"])
+    check root.tryExecute(@["-p=80"]).isOk
+    check port == 80
+    let stuck = root.tryExecute(@["-p=x80"])
     check stuck.error of ParsingFlagError
     check (ref ParsingFlagError)(stuck.error).flag == "port"
-    check (ref ParsingFlagError)(stuck.error).raw == "=80"
-    check port == 4
+    check (ref ParsingFlagError)(stuck.error).raw == "x80"
+    check port == 80
     let unknown = root.tryExecute(@["-xq"])
     check (ref ParsingFlagError)(unknown.error).flag == "q"
     check extra
@@ -270,13 +275,13 @@ suite "argv parsing":
     check name == ""
     check port == 8
 
-  test "empty token starts positional":
+  test "empty token is positional":
     var verbose = false
     let root = newCommand("app")
     root.addFlag("verbose", verbose)
     let parsed = root.parse(@["", "--verbose"])
-    check verbose == false
-    check parsed.args == @["", "--verbose"]
+    check verbose
+    check parsed.args == @[""]
 
   test "unknown short flag and minus with digit":
     var n = 0
@@ -287,7 +292,7 @@ suite "argv parsing":
     check (ref ParsingFlagError)(bad.error).raw == "-z"
     let dashed = root.tryExecute(@["---"])
     check (ref ParsingFlagError)(dashed.error).flag == "-"
-    check root.tryExecute(@["-4"]).error of ParsingFlagError
+    check root.parse(@["-4"]).args == @["-4"]
     let hidden = root.parse(@["--", "-4"])
     check hidden.args == @["-4"]
     check n == 1
