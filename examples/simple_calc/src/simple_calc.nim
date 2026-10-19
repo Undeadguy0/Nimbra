@@ -1,7 +1,5 @@
+import std/parseutils
 import nimbra
-import results
-import options
-import parseutils
 
 type
   OperationType = enum
@@ -20,7 +18,9 @@ proc calc(operation {.short: 'o'.}: OperationType, args: seq[string]) =
 
   for arg in args:
     var val = 0.0
-    if parseFloat(arg, val) == 0:
+    # Число должно занять весь токен: `12abc` — ошибка, а не 12.
+    # The number must take the whole token: `12abc` is an error, not 12.
+    if arg.len == 0 or parseFloat(arg, val) != arg.len:
       raise newException(BadNumberError, arg & " cannot be parsed into float")
     case operation
     of Add:
@@ -36,6 +36,6 @@ when isMainModule:
   defineCommand(calc, mainCmd)
   mainCmd.argLimit = atLeast(1)
 
-  let execRes = mainCmd.tryExecute()
-  if execRes.isErr:
-    echo "Error: " & execRes.error.msg
+  # Ошибка CLI уходит в stderr, код выхода 1.
+  # A CLI error goes to stderr, exit code 1.
+  mainCmd.executeOrQuit()
