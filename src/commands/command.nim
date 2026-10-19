@@ -579,6 +579,18 @@ proc checkArgs(cmd: Command, args: seq[string]) =
     cmd.argLimit.max,
   )
 
+proc checkCommand(cmd: Command, args: seq[string]) =
+  ## Родитель без своего run позиционные не принимает: первый из них —
+  ## опечатка в имени подкоманды.
+  ## A parent without its own run takes no positionals: the first one is a
+  ## mistyped subcommand name.
+  if args.len == 0 or cmd.subcommands.len == 0 or cmd.runImpl.isSome:
+    return
+  var names: seq[string]
+  for child in cmd.subcommands:
+    names.add child.name
+  raise newUnknownCommandError(args[0], cmd.name, names)
+
 proc callHook(slot: Option[Handler], args: seq[string]) =
   if slot.isSome:
     slot.get()(args)
@@ -599,9 +611,12 @@ proc runHooks(parsed: Parsed) =
       callHook(path[i].persPostRunImpl, args)
 
 proc execute*(root: Command, tokens: seq[string] = commandLineParams()) =
-  ## Разбор, лимит, хуки. Ошибку CLI не печатает и процесс не завершает.
-  ## Parse, limit, hooks. Does not print a CLI error and does not exit the process.
+  ## Разбор, неизвестная команда, лимит, хуки. Ошибку CLI не печатает и
+  ## процесс не завершает.
+  ## Parse, unknown command, limit, hooks. Does not print a CLI error and
+  ## does not exit the process.
   let parsed = parse(root, tokens)
+  checkCommand(parsed.path[^1], parsed.args)
   checkArgs(parsed.path[^1], parsed.args)
   runHooks(parsed)
 
